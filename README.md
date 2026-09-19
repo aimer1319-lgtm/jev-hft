@@ -1,4 +1,4 @@
-# jev
+# jev-hft
 
 A research project that tests whether **Jev**, a fast AI model from TypeSafe AI, can judge
 market data and news quickly and accurately enough to matter for trading. Jev is reached

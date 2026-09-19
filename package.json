@@ -1,5 +1,5 @@
 {
-  "name": "jev",
+  "name": "jev-hft",
   "version": "1.0.0",
   "description": "Research pipeline that asks TypeSafe's Jev (via Vercel AI Gateway) to judge news and market data for Bitcoin and US stocks. Paper trading only.",
   "scripts": {
