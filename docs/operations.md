@@ -105,18 +105,19 @@ market-data program 158 MB and about 2.4%. The Pi's processor is roughly two to 
 slower, so expect about 5 to 8% of one core each. Nearly all the time is spent waiting on the
 network, so it will be just as fast on the same internet connection.
 
-To set it up:
+**Setting it up takes one script.** Clone the repo on the Pi, copy your `.env` over, and run
+`./deploy/pi/setup.sh`. It installs Node.js 24 if needed, installs the packages, checks your keys,
+and sets the news pipeline up as a background service that starts at boot, waits for the clock to
+sync, restarts itself after a crash, and saves its pending records when stopped. Step-by-step
+instructions and everyday commands are in [deploy/pi/README.md](../deploy/pi/README.md).
 
-1. Use the 64-bit version of Raspberry Pi OS and install **Node.js 24** (the version in Raspberry
-   Pi OS's own software list is too old).
-2. Copy the project folder without `node_modules` and `data`, including your `.env`. Run
-   `npm ci`. Everything is plain JavaScript, so nothing needs compiling.
-3. Prefer a wired connection to Wi-Fi, and make sure the clock is synced (`timedatectl`).
-4. If you'll record market data around the clock (about 260 MB a day), use an SSD rather than
-   the SD card, since constant writing wears SD cards out.
-5. To run it all the time, set it up as a system service that restarts automatically. A normal
-   stop saves pending records; a sudden power cut loses up to 30 minutes of pending news
-   decisions.
+A few tips:
+
+- Use the 64-bit Raspberry Pi OS, and a network cable rather than Wi-Fi if you can.
+- If you'll also save market data around the clock (`--service record`, about 260 MB a day), use
+  an SSD rather than the SD card, since constant writing wears SD cards out.
+- A sudden power cut loses up to 30 minutes of pending news decisions; a normal stop or restart
+  doesn't.
 
 **Don't run it on the Pi and another computer at the same time.** Alpaca's free plan allows one
 connection per stream, so the second copy would be refused. The gateway's free-tier limit would

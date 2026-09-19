@@ -100,7 +100,10 @@ const status = setInterval(() => {
   );
 }, 30_000);
 
+let stopping = false;
 const stop = () => {
+  if (stopping) return; // a second signal (e.g. from systemd) while records are being saved
+  stopping = true;
   clearInterval(status);
   for (const src of sources) src.close();
   feed.close();

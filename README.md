@@ -51,6 +51,9 @@ Keys go in `.env`, which is private and never committed. Every npm script loads 
 | `X_BEARER_TOKEN` | reading posts from X's official API (paid per post) |
 | `NEWS_USER_AGENT` | your name and email, which the SEC requires for its filing feed |
 
+To run it around the clock on a Raspberry Pi, see [deploy/pi/README.md](deploy/pi/README.md):
+one script sets everything up as a background service.
+
 Any source whose key is missing is simply skipped. To try everything without spending anything,
 use the practice model, which gives random answers:
 

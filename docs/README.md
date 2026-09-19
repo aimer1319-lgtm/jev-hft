@@ -132,4 +132,5 @@ src/
   lib/stats.ts          small math helpers (percentiles, rank correlation, safe number handling)
 bench/latency.ts        measures Jev's response time through the gateway
 examples/triage.ts      the smallest possible Jev example
+deploy/pi/              Raspberry Pi setup script and background service (see deploy/pi/README.md)
 ```

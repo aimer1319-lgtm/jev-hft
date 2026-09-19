@@ -48,7 +48,10 @@ const status = setInterval(() => {
   applyUs = [];
 }, STATUS_MS);
 
+let stopping = false;
 const stop = () => {
+  if (stopping) return; // a second signal (e.g. from systemd) while records are being saved
+  stopping = true;
   clearInterval(status);
   feed.close();
   engine.flush(Infinity, true); // horizons that have not elapsed are recorded as NaN

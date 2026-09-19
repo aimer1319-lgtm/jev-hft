@@ -20,7 +20,10 @@ const feed = coinbaseFeed(config.product, e => {
 console.error(`recording ${config.product} -> ${file}`);
 const status = setInterval(() => console.error(`${new Date().toISOString().slice(11, 19)} ${events} events`), 30_000);
 
+let stopping = false;
 const stop = () => {
+  if (stopping) return; // a second signal (e.g. from systemd) while records are being saved
+  stopping = true;
   clearInterval(status);
   feed.close();
   sink.on('finish', () => {

@@ -1,0 +1,47 @@
+# Runs one of the jev-hft programs as a background service. The part after "@" picks which:
+#   jev-hft@news-live   the news pipeline      (same as npm run news)
+#   jev-hft@record      save Coinbase data     (same as npm run record)
+#   jev-hft@live        the market-data loop   (same as npm run live)
+#
+# deploy/pi/setup.sh fills in your user name, the project folder, and the path to Node.js,
+# then installs this file.
+
+[Unit]
+Description=jev-hft %i (paper-trading research pipeline)
+Documentation=https://github.com/cristiancolon/jev-hft
+# Start only once the network is up and the clock has been synced: every timestamp the
+# pipeline records depends on the clock being right when it starts.
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__DIR__
+# Make sure the data folder exists and belongs to the user (runs with full rights, hence "+").
+ExecStartPre=+/usr/bin/install -d -o __USER__ -g __GROUP__ __DIR__/data
+ExecStart=__NODE__ --env-file-if-exists=.env src/%i.ts
+
+# Stopping sends SIGTERM, which makes the pipeline save its pending records before exiting.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Come back after crashes or network trouble, and restart once a week so long runs stay fresh.
+Restart=always
+RestartSec=10
+RuntimeMaxSec=1w
+
+# Safety: the program can read the project folder but only write to its data folder.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=__DIR__/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

@@ -261,3 +261,14 @@ skips retweets and replies, and stops for the day at a set number of posts.
 where important announcements appear first, and one search per check stays well within X's
 limits. **Rethink** if speed from X becomes more important than cost; X's real-time stream would
 be faster.
+
+## D32. On a Raspberry Pi, run as a systemd service
+
+**Chosen:** `deploy/pi/setup.sh` installs the pipeline as a systemd service (`jev-hft@news-live`,
+or `record` / `live`). It starts at boot after the clock syncs, restarts after crashes and once a
+week, and may only write to the project's `data/` folder.
+
+**Why:** systemd comes with Raspberry Pi OS, so nothing extra is needed to keep the pipeline
+running unattended, and its logs are kept in the system journal. Waiting for the clock matters
+because every recorded time depends on it. Stopping sends the same signal as Ctrl-C, so pending
+records are saved before it exits.
