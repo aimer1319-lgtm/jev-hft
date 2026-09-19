@@ -3,7 +3,10 @@
 export type NewsItem = {
   /** Stable per source (guid, entry id, link, or headline), prefixed with the source name. */
   id: string;
+  /** Short machine name of the source ("fed", "alpaca:benzinga", "x:SECGov"); reports group by it. */
   source: string;
+  /** How the source is described to the model ("Federal Reserve press releases (official)"). */
+  sourceLabel?: string;
   headline: string;
   /** Plain text, tags stripped, truncated. */
   summary?: string;

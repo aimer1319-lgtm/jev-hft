@@ -10,7 +10,14 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src", "bench", "examples"]
+  "include": [
+    "src",
+    "bench",
+    "examples",
+    "test"
+  ]
 }

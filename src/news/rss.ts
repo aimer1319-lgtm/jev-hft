@@ -3,16 +3,29 @@
 // Polite by construction: one request in flight per feed, conditional GET (ETag /
 // Last-Modified -> 304), jittered interval, exponential backoff on errors, and Retry-After
 // honored. Items already in the feed at startup are backlog and are never emitted.
+//
+// How often a feed is checked depends on what a check costs its server. A feed that answers
+// "304 Not Modified" sends nothing and takes a few milliseconds, so it is checked every
+// `fastIntervalMs`. A feed that sends its whole content every time is checked every `intervalMs`.
 
 import { XMLParser } from 'fast-xml-parser';
 import { nowMs } from '../feed/types.ts';
+import { poller } from '../lib/poll.ts';
+import { SeenSet } from '../lib/seen.ts';
 import type { NewsItem, NewsSource, SourceStats } from './types.ts';
 
-/** `symbols`: the instruments this feed's news is about (routing for items that carry no tags). */
-export type FeedConfig = { name: string; url: string; symbols?: string[] };
-export type PollOptions = { intervalMs: number; userAgent: string; log: (s: string) => void };
+export type FeedConfig = {
+  name: string;
+  url: string;
+  /** How the source is described to the model; defaults to the name. */
+  label?: string;
+  /** The instruments this feed's news is about (routing for items that carry no tags). */
+  symbols?: string[];
+  /** Check this often even though every check downloads the whole feed (for feeds where minutes matter). */
+  fast?: boolean;
+};
+export type PollOptions = { intervalMs: number; fastIntervalMs: number; userAgent: string; log: (s: string) => void };
 
-const MAX_SEEN = 5000;
 const SUMMARY_CHARS = 500;
 
 const parser = new XMLParser({
@@ -29,17 +42,12 @@ export function rssSource(feed: FeedConfig, opts: PollOptions, onItem: (item: Ne
   }
 
   const stats: SourceStats = { polls: 0, notModified: 0, items: 0, errors: 0 };
-  const seen = new Set<string>();
+  const seen = new SeenSet();
   let etag: string | undefined;
   let lastModified: string | undefined;
   let primed = false;
-  let failures = 0;
-  let closed = false;
-  let timer: NodeJS.Timeout | undefined;
-
-  const schedule = (ms: number) => {
-    if (!closed) timer = setTimeout(poll, ms * (0.9 + 0.2 * Math.random()));
-  };
+  /** Whether the server has shown it can answer "nothing changed" without sending the feed. */
+  let cheap = false;
 
   async function poll() {
     stats.polls++;
@@ -49,61 +57,43 @@ export function rssSource(feed: FeedConfig, opts: PollOptions, onItem: (item: Ne
     };
     if (etag) headers['If-None-Match'] = etag;
     if (lastModified) headers['If-Modified-Since'] = lastModified;
-    try {
-      const res = await fetch(feed.url, { headers, signal: AbortSignal.timeout(10_000) });
-      const recvTs = nowMs();
-      if (res.status === 304) {
-        stats.notModified++;
-        failures = 0;
-        return schedule(opts.intervalMs);
-      }
-      if (!res.ok) {
-        const retryAfterS = Number(res.headers.get('retry-after'));
-        throw Object.assign(new Error(`HTTP ${res.status}`), {
-          retryAfterMs: Number.isFinite(retryAfterS) ? retryAfterS * 1000 : 0,
-        });
-      }
-      etag = res.headers.get('etag') ?? undefined;
-      lastModified = res.headers.get('last-modified') ?? undefined;
-      const items = parseFeed(await res.text(), feed.name, recvTs);
-      const fresh = items.filter(i => !seen.has(i.id));
-      for (const i of fresh) remember(i.id);
-      if (!primed) {
-        primed = true;
-        opts.log(`[news:${feed.name}] ${items.length} items already in feed (backlog, ignored)`);
-      } else {
-        fresh.sort((a, b) => (a.publishedTs ?? 0) - (b.publishedTs ?? 0));
-        for (const i of fresh) {
-          stats.items++;
-          onItem(feed.symbols ? { ...i, symbols: feed.symbols } : i);
-        }
-      }
-      failures = 0;
-      schedule(opts.intervalMs);
-    } catch (error) {
-      stats.errors++;
-      failures++;
-      const wait = Math.max(Math.min(opts.intervalMs * 2 ** failures, 5 * 60_000), (error as { retryAfterMs?: number }).retryAfterMs ?? 0);
-      opts.log(`[news:${feed.name}] ${(error as Error).message}; retrying in ${(wait / 1000).toFixed(0)}s`);
-      schedule(wait);
+    const res = await fetch(feed.url, { headers, signal: AbortSignal.timeout(10_000) });
+    if (res.status === 304) {
+      stats.notModified++;
+      cheap = true;
+      return;
+    }
+    if (!res.ok) {
+      const retryAfterS = Number(res.headers.get('retry-after'));
+      throw Object.assign(new Error(`HTTP ${res.status}`), { retryAfterMs: Number.isFinite(retryAfterS) ? retryAfterS * 1000 : 0 });
+    }
+    etag = res.headers.get('etag') ?? undefined;
+    lastModified = res.headers.get('last-modified') ?? undefined;
+    const xml = await res.text();
+    const recvTs = nowMs(); // when we had the content, not when the first byte arrived
+    const items = parseFeed(xml, feed.name, recvTs);
+    const fresh = items.filter(i => seen.add(i.id));
+    if (!primed) {
+      primed = true;
+      opts.log(`[news:${feed.name}] ${items.length} items already in feed (backlog, ignored)`);
+      return;
+    }
+    fresh.sort((a, b) => (a.publishedTs ?? 0) - (b.publishedTs ?? 0));
+    for (const i of fresh) {
+      stats.items++;
+      onItem({ ...i, sourceLabel: feed.label ?? feed.name, ...(feed.symbols ? { symbols: feed.symbols } : {}) });
     }
   }
 
-  // Sets iterate in insertion order, so the first key is the oldest.
-  const remember = (id: string) => {
-    seen.add(id);
-    if (seen.size > MAX_SEEN) seen.delete(seen.values().next().value!);
-  };
-
-  void poll();
-  return {
-    name: feed.name,
-    stats,
-    close() {
-      closed = true;
-      clearTimeout(timer);
+  const loop = poller({
+    intervalMs: () => (cheap || feed.fast ? opts.fastIntervalMs : opts.intervalMs),
+    run: poll,
+    onError: (error, wait) => {
+      stats.errors++;
+      opts.log(`[news:${feed.name}] ${error.message}; retrying in ${(wait / 1000).toFixed(0)}s`);
     },
-  };
+  });
+  return { name: feed.name, stats, close: () => loop.close() };
 }
 
 /** Parse RSS 2.0, Atom, or RSS 1.0 (RDF) into news items. Exported for tests and tooling. */
@@ -152,7 +142,7 @@ function link(v: unknown): string | undefined {
 }
 
 // Summaries often carry HTML (in CDATA, where entities are not decoded by the XML parser).
-function clean(s: string): string {
+export function clean(s: string): string {
   return s
     .replace(/<[^>]*>/g, ' ')
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))

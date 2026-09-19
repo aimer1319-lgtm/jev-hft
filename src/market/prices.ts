@@ -14,7 +14,12 @@ export interface Prices {
   prepare(symbols: string[], untilTs: number, seedTs: number): Promise<Set<string>>;
   mid(symbol: string): number;
   midAt(symbol: string, t: number): number;
+  /** Bid/ask spread now, in basis points. */
   spreadBps(symbol: string): number;
+  /** Bid/ask spread of the quote in force at time t (NaN when not tracked over time). */
+  spreadAt(symbol: string, t: number): number;
+  /** The last closing price, for instruments that have one (NaN otherwise). */
+  lastClose(symbol: string): number;
   /** Periodic housekeeping (release subscriptions nobody needs). */
   tick(now: number): void;
 }
@@ -50,6 +55,15 @@ export class LivePrices implements Prices {
       return this.market.ready ? ((b.bestAsk - b.bestBid) / b.mid) * 1e4 : NaN;
     }
     return this.stocks?.book.spreadBps(symbol) ?? NaN;
+  }
+
+  // Bitcoin's spread on Coinbase is a tiny fraction of a basis point, so its history is not kept.
+  spreadAt(symbol: string, t: number) {
+    return symbol === CRYPTO_SYMBOL ? NaN : (this.stocks?.book.spreadAt(symbol, t) ?? NaN);
+  }
+
+  lastClose(symbol: string) {
+    return symbol === CRYPTO_SYMBOL ? NaN : (this.stocks?.lastClose(symbol) ?? NaN);
   }
 
   tick(now: number) {

@@ -1,6 +1,9 @@
 // Market state folded from events: book, trade tape, mid history, and 1 Hz feature
 // history used to express features as z-scores. Driven only by event timestamps,
 // so replaying recorded events reproduces live behavior exactly.
+//
+// While the feed is broken (from the last good event until the next snapshot) the price is
+// unknown, not "unchanged": midAt() answers NaN for times inside such a gap.
 
 import type { Aggressor, MarketEvent } from '../feed/types.ts';
 import { OrderBook } from './book.ts';
@@ -53,6 +56,10 @@ export class MarketState {
   private secMids: number[] = [];
   private lastSec = 0;
   private history = new Map<NormKey, number[]>(NORMALIZED.map(k => [k, []]));
+  /** Periods with no trustworthy book: (last good event, next snapshot). Oldest first. */
+  private gaps: [from: number, to: number][] = [];
+  /** Start of the gap we are in now, NaN when the book is good. */
+  private gapFrom = NaN;
 
   /** How long to keep mid history; must cover the longest forward-return horizon. */
   private readonly midRetentionMs: number;
@@ -64,10 +71,14 @@ export class MarketState {
   }
 
   apply(e: MarketEvent) {
+    const previous = this.lastRecvTs;
     this.lastRecvTs = e.recvTs;
     if (e.type === 'reset') {
+      // Data was lost some time after the previous event, so that is where the gap starts.
+      if (this.ready && Number.isNaN(this.gapFrom)) this.gapFrom = previous;
       this.book.clear();
       this.ready = false;
+      this.secMids = []; // one-second returns must not span the gap
       return;
     }
     this.lastExchTs = e.exchTs;
@@ -75,6 +86,10 @@ export class MarketState {
       if (e.snapshot) {
         this.book.load(e.updates);
         this.ready = this.book.ready;
+        if (this.ready && !Number.isNaN(this.gapFrom)) {
+          this.gaps.push([this.gapFrom, e.recvTs]);
+          this.gapFrom = NaN;
+        }
       } else {
         for (const u of e.updates) this.book.apply(u.side, u.price, u.size);
       }
@@ -86,8 +101,10 @@ export class MarketState {
     if (this.ready) this.sampleSecond(e.recvTs);
   }
 
-  /** Mid as of time `t` (last known value at or before t). */
+  /** Mid as of time `t` (last known value at or before t); NaN while the feed was broken. */
   midAt(t: number): number {
+    if (t > this.gapFrom) return NaN; // false when gapFrom is NaN
+    for (let i = this.gaps.length - 1; i >= 0 && this.gaps[i]![1] > t; i--) if (t > this.gaps[i]![0]) return NaN;
     let lo = 0;
     let hi = this.midT.length;
     while (lo < hi) {
@@ -189,6 +206,7 @@ export class MarketState {
       const cut = this.midT.findIndex(x => x >= t - this.midRetentionMs);
       this.midT.splice(0, cut - 1);
       this.midV.splice(0, cut - 1);
+      this.gaps = this.gaps.filter(g => g[1] >= t - this.midRetentionMs);
     }
   }
 

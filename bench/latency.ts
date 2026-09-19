@@ -9,8 +9,12 @@
 //   npm run bench            # all scenarios
 //   BENCH_N=40 npm run bench # more samples per scenario
 //
-// Free-tier AI Gateway accounts are limited to about 5 requests per 5 minutes on this
-// model; most requests then come back 429 and are reported as gateway-only timings.
+// An AI Gateway account without credits is limited to about 5 requests per 5 minutes on this
+// model; most requests then come back 429 and are reported as gateway-only timings. With
+// credits, all of the roughly 170 requests go through (about half a cent at list price).
+//
+// Each successful response also says how long the gateway waited for TypeSafe, printed as
+// "typesafe p50": the rest of the round trip is the network and the gateway itself.
 
 import https from 'node:https';
 import { performance } from 'node:perf_hooks';
@@ -35,6 +39,8 @@ type Sample = {
   total: number;
   route?: string;
   inputTokens?: number;
+  /** How long the gateway says it waited for TypeSafe; the rest of `total` is network and gateway. */
+  providerMs?: number;
   error?: string;
 };
 
@@ -68,8 +74,12 @@ function post(agent: https.Agent, body: string, modelId = MODEL): Promise<Sample
           const text = Buffer.concat(chunks).toString();
           const status = res.statusCode ?? 0;
           let inputTokens: number | undefined;
+          let providerMs: number | undefined;
           try {
-            inputTokens = JSON.parse(text).usage?.inputTokens;
+            const json = JSON.parse(text);
+            inputTokens = json.usage?.inputTokens;
+            const attempt = json.providerMetadata?.gateway?.routing?.modelAttempts?.at(-1)?.providerAttempts?.at(-1);
+            if (attempt?.startTime && attempt?.endTime) providerMs = attempt.endTime - attempt.startTime;
           } catch {}
           resolve({
             ok: status === 200,
@@ -81,6 +91,7 @@ function post(agent: https.Agent, body: string, modelId = MODEL): Promise<Sample
             total,
             route: res.headers['x-vercel-id'] as string | undefined,
             inputTokens,
+            providerMs,
             ...(status !== 200 ? { error: text.slice(0, 160) } : {}),
           });
         });
@@ -162,7 +173,8 @@ function report(name: string, samples: Sample[]) {
     const s = summarize(xs.map(x => x.total));
     return `${label.padEnd(30)} n=${String(xs.length).padStart(3)}  p50 ${fmtMs(s.p50)}  p90 ${fmtMs(s.p90)}  p99 ${fmtMs(s.p99)}  min ${fmtMs(s.min)}  max ${fmtMs(s.max)}`;
   };
-  if (ok.length) console.log(`${line(name, ok)}  tok ${String(tokens ?? '-').padStart(5)}  ${route}`);
+  const provider = summarize(ok.map(x => x.providerMs ?? NaN).filter(Number.isFinite));
+  if (ok.length) console.log(`${line(name, ok)}  tok ${String(tokens ?? '-').padStart(5)}  typesafe p50 ${fmtMs(provider.p50)}  ${route}`);
   // Rejections (429 rate limit, 404 unknown model) are answered by the gateway without
   // calling the provider, so their round trip is the gateway's own overhead.
   if (rejected.length) {

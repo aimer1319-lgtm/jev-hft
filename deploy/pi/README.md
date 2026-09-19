@@ -50,7 +50,7 @@ pipeline:
 
 ```bash
 ./deploy/pi/setup.sh --service record    # save Coinbase market data around the clock (for backtests)
-./deploy/pi/setup.sh --service live      # the market-data loop (needs paid gateway credits to be useful)
+./deploy/pi/setup.sh --service live      # the market-data loop (needs gateway credits; about $3 a day)
 ```
 
 Each runs as its own service (`jev-hft@record`, `jev-hft@live`). Saving market data writes about
@@ -65,10 +65,17 @@ Each runs as its own service (`jev-hft@record`, `jev-hft@live`). Saving market d
   A sudden power cut loses up to 30 minutes of pending news decisions.
 - **Stays in its lane:** it runs as your user, can read the project folder, and can only write to
   the project's `data/` folder.
+- **Notices dead connections:** on Wi-Fi especially, a connection can die without the Pi
+  noticing. The pipeline checks for that itself and reconnects within about 10 seconds (Coinbase)
+  or 40 seconds (Alpaca). Prices during the break are recorded as unknown, not as unchanged.
 - **Logs go to the system journal**, so `journalctl` shows them even after a reboot.
 
 Don't set `RUN_MINUTES` in `.env` for a service: the program would stop after that time and the
 service would just start it again.
 
 Don't run the same pipeline on the Pi and another computer at the same time. Alpaca's free plan
-allows one connection per stream, and both copies would share the gateway's rate limit.
+allows one connection per stream, X costs would double, and on a gateway account without credits
+both copies would share the same few calls.
+
+The status line printed every 30 seconds includes the running cost of Jev calls, so
+`journalctl -u jev-hft@news-live | tail` shows what the service has spent since it started.

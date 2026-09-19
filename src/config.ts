@@ -4,24 +4,31 @@ import type { FeedConfig } from './news/rss.ts';
 /** Numeric env var: unset or empty means the default; anything non-numeric is an error. */
 export const envNum = (name: string, fallback: number, { min = -Infinity } = {}) => {
   const v = process.env[name];
-  if (v === undefined || v === '') return fallback;
+  if (v === undefined || v.trim() === '') return fallback;
   const n = Number(v);
   if (Number.isNaN(n) || n < min) throw new Error(`${name} must be a number >= ${min}, got "${v}"`);
   return n;
 };
-const num = envNum;
+
+/** Env var that must be one of a few words. */
+function envChoice<T extends string>(name: string, fallback: T, allowed: readonly T[]): T {
+  const v = process.env[name] || fallback;
+  if (!allowed.includes(v as T)) throw new Error(`${name} must be one of ${allowed.join(', ')}, got "${v}"`);
+  return v as T;
+}
 
 /**
- * Public feeds polled by default, with the instruments their news is about. Fed releases are
- * macro news, so they are routed to the broad US market (SPY) as well as Bitcoin.
+ * Public feeds polled by default, with the instruments their news is about and how the source
+ * is described to the model. Fed releases are macro news, so they are routed to the broad US
+ * market (SPY) as well as Bitcoin.
  * Override with NEWS_FEEDS="name=url name=url ..." (custom feeds route to Bitcoin).
  */
 export const DEFAULT_FEEDS: FeedConfig[] = [
-  { name: 'fed', url: 'https://www.federalreserve.gov/feeds/press_all.xml', symbols: ['SPY', 'BTC-USD'] },
-  { name: 'cftc', url: 'https://www.cftc.gov/RSS/RSSGP/rssgp.xml', symbols: ['BTC-USD'] },
-  { name: 'coinbase-status', url: 'https://status.coinbase.com/history.atom', symbols: ['BTC-USD'] },
-  { name: 'coindesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss', symbols: ['BTC-USD'] },
-  { name: 'cointelegraph', url: 'https://cointelegraph.com/rss', symbols: ['BTC-USD'] },
+  { name: 'fed', label: 'Federal Reserve press releases (official)', url: 'https://www.federalreserve.gov/feeds/press_all.xml', symbols: ['SPY', 'BTC-USD'] },
+  { name: 'cftc', label: 'CFTC press releases (official)', url: 'https://www.cftc.gov/RSS/RSSGP/rssgp.xml', symbols: ['BTC-USD'] },
+  { name: 'coinbase-status', label: 'Coinbase status page (official)', url: 'https://status.coinbase.com/history.atom', symbols: ['BTC-USD'] },
+  { name: 'coindesk', label: 'CoinDesk (crypto news site)', url: 'https://www.coindesk.com/arc/outboundfeeds/rss', symbols: ['BTC-USD'] },
+  { name: 'cointelegraph', label: 'Cointelegraph (crypto news site)', url: 'https://cointelegraph.com/rss', symbols: ['BTC-USD'] },
 ];
 
 function feeds(spec: string | undefined): FeedConfig[] {
@@ -36,6 +43,17 @@ function feeds(spec: string | undefined): FeedConfig[] {
     });
 }
 
+const NEWS_SOURCES = ['rss', 'alpaca', 'edgar', 'x'] as const;
+
+/** NEWS_SOURCES=none runs no live source at all (useful with NEWS_MANUAL=1). */
+function sources(spec: string | undefined): string[] {
+  if (spec?.trim() === 'none') return [];
+  const list = (spec || NEWS_SOURCES.join(',')).split(',').map(s => s.trim()).filter(Boolean);
+  const unknown = list.filter(s => !(NEWS_SOURCES as readonly string[]).includes(s));
+  if (unknown.length > 0) throw new Error(`NEWS_SOURCES has unknown entries: ${unknown.join(', ')} (choose from ${NEWS_SOURCES.join(', ')})`);
+  return list;
+}
+
 const alpacaFeed = process.env.ALPACA_FEED || 'iex';
 
 /** Official accounts followed on X by default: US economic agencies and market regulators, and Coinbase. */
@@ -44,20 +62,30 @@ export const DEFAULT_X_ACCOUNTS = ['federalreserve', 'SECGov', 'CFTC', 'USTreasu
 export const config = {
   product: process.env.PRODUCT || 'BTC-USD',
   provider: process.env.JEV_PROVIDER || 'gateway',
-  encoding: (process.env.JEV_ENCODING || 'compact') as Encoding,
-  /** Minimum spacing between decisions. 0 = fire again as soon as a slot frees up. */
-  minIntervalMs: num('JEV_MIN_INTERVAL_MS', 0),
+  encoding: envChoice<Encoding>('JEV_ENCODING', 'compact', ['compact', 'json']),
+  /**
+   * Minimum spacing between market-data decisions. Asking back to back (0) gives about 2.7
+   * decisions a second, but the report counts stretches of time, not decisions, so that mostly
+   * buys the same information several times over. One a second costs about a third as much.
+   */
+  minIntervalMs: envNum('JEV_MIN_INTERVAL_MS', 1000, { min: 0 }),
   /** Concurrent model calls. >1 raises decision rate, not decision freshness. */
-  maxInFlight: num('JEV_MAX_INFLIGHT', 1),
+  maxInFlight: envNum('JEV_MAX_INFLIGHT', 1, { min: 1 }),
   /** Abandon a call after this long; its answer would be too stale to act on. */
-  timeoutMs: num('JEV_TIMEOUT_MS', 2000),
+  timeoutMs: envNum('JEV_TIMEOUT_MS', 2000, { min: 100 }),
+  /**
+   * "Flat" means a move smaller than this many typical moves for the horizon; 0 = fixed thresholds.
+   * Backtests of 0.5, 1, and 2 on the same snapshots predicted equally well; 2 left the fewest of
+   * Jev's answers stuck at the extremes (docs/model.md).
+   */
+  flatSigmas: envNum('JEV_FLAT_SIGMAS', 2, { min: 0 }),
   /** Let returns, volatility, and z-score windows fill before deciding. */
-  warmupMs: num('WARMUP_S', 60) * 1000,
-  runMs: num('RUN_MINUTES', 0) * 60_000,
+  warmupMs: envNum('WARMUP_S', 60, { min: 0 }) * 1000,
+  runMs: envNum('RUN_MINUTES', 0, { min: 0 }) * 60_000,
   /** Forward-return horizons (seconds) recorded for every decision. */
   horizons: [1, 2, 5, 10, 30, 60],
   /** Round-trip trading cost used as the hurdle in analysis (fees + half-spread x2). */
-  feeBps: num('FEE_BPS', 10),
+  feeBps: envNum('FEE_BPS', 10, { min: 0 }),
 
   alpaca: {
     key: process.env.ALPACA_API_KEY_ID || '',
@@ -71,26 +99,36 @@ export const config = {
   x: {
     bearer: process.env.X_BEARER_TOKEN || '',
     accounts: (process.env.X_ACCOUNTS || DEFAULT_X_ACCOUNTS.join(' ')).split(/[\s,]+/).filter(Boolean).map(a => a.replace(/^@/, '')),
-    /** Seconds between searches; each search covers all accounts. */
-    pollMs: envNum('X_POLL_S', 30, { min: 5 }) * 1000,
+    /** Seconds between searches. X bills per post read, not per search, so checking often is free. */
+    pollMs: envNum('X_POLL_S', 10, { min: 5 }) * 1000,
     /** Posts read per UTC day before the source pauses (X bills per post read). */
     maxPostsPerDay: envNum('X_MAX_POSTS_PER_DAY', 500, { min: 1 }),
   },
 
   news: {
     /** Which sources to run: rss, alpaca (needs Alpaca keys), edgar (needs NEWS_USER_AGENT), x (needs X_BEARER_TOKEN). */
-    sources: (process.env.NEWS_SOURCES || 'rss,alpaca,edgar,x').split(',').map(s => s.trim()),
+    sources: sources(process.env.NEWS_SOURCES),
     feeds: feeds(process.env.NEWS_FEEDS),
     /** At most this many instruments per item; items tagged with many tickers are usually roundups. */
     maxSymbolsPerItem: envNum('NEWS_MAX_SYMBOLS', 3, { min: 1 }),
     /** Route for tagged-source items without tickers (macro news): broad market and Bitcoin. */
     untagged: ['SPY', 'BTC-USD'],
-    /** Per-feed poll interval. Detection latency averages about half of this plus the publisher's own lag. */
-    pollMs: Math.max(num('NEWS_POLL_S', 30), 5) * 1000,
+    /** Poll interval for feeds that send their whole content on every check. */
+    pollMs: envNum('NEWS_POLL_S', 30, { min: 5 }) * 1000,
+    /** Poll interval for feeds that can answer "nothing changed" without sending anything. */
+    fastPollMs: envNum('NEWS_FAST_POLL_S', 10, { min: 5 }) * 1000,
     userAgent: process.env.NEWS_USER_AGENT || 'jev-research/0.1 (news poller)',
     manual: process.env.NEWS_MANUAL === '1',
-    /** Give up on a rate-limited item after this long in the queue. */
-    maxAgeMs: num('NEWS_MAX_AGE_S', 300) * 1000,
+    /** Items evaluated at the same time, so a burst of news does not queue behind one call. */
+    maxInFlight: envNum('NEWS_MAX_INFLIGHT', 4, { min: 1 }),
+    /** News is judged over minutes, so a slow answer is still worth waiting for. */
+    timeoutMs: envNum('NEWS_TIMEOUT_MS', 5000, { min: 100 }),
+    /** Give up on an item that has waited this long for the model (rate limits, failures). */
+    maxAgeMs: envNum('NEWS_MAX_AGE_S', 300, { min: 1 }) * 1000,
+    /** Ask only about instruments whose outcome can be measured: market open, usable quote. */
+    onlyTradable: process.env.NEWS_ONLY_TRADABLE !== '0',
+    /** A stock quote wider than this is not a usable price (engine and report use the same limit). */
+    maxSpreadBps: envNum('MAX_SPREAD_BPS', 50, { min: 0 }),
     /** Forward-return horizons (seconds) recorded for each news decision. */
     horizons: [10, 30, 60, 300, 900, 1800],
   },

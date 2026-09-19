@@ -4,7 +4,7 @@
 
 import { createInterface } from 'node:readline';
 import { nowMs } from '../feed/types.ts';
-import { normalizeSymbol } from './instruments.ts';
+import { normalizeCashtag } from './instruments.ts';
 import type { NewsItem, NewsSource, SourceStats } from './types.ts';
 
 export function manualSource(onItem: (item: NewsItem) => void, log: (s: string) => void): NewsSource {
@@ -14,10 +14,11 @@ export function manualSource(onItem: (item: NewsItem) => void, log: (s: string) 
     const headline = line.trim();
     if (!headline) return;
     const now = nowMs();
-    const tags = [...headline.matchAll(/\$([A-Za-z]{1,5}(?:\.[A-Za-z])?)\b/g)].map(m => normalizeSymbol(m[1]!));
+    const tags = [...headline.matchAll(/\$([A-Za-z]{1,5}(?:\.[A-Za-z])?)\b/g)].map(m => normalizeCashtag(m[1]!));
     const symbols = tags.filter((s): s is string => s !== undefined);
     stats.items++;
-    onItem({ id: `manual:${stats.items}`, source: 'manual', headline, publishedTs: now, recvTs: now, ...(symbols.length ? { symbols } : {}) });
+    // Described to the model as a newswire, so a typed headline is judged like a real one.
+    onItem({ id: `manual:${stats.items}`, source: 'manual', sourceLabel: 'newswire', headline, publishedTs: now, recvTs: now, ...(tags.length ? { symbols } : {}) });
   });
   log('[news:manual] type a headline and press Enter');
   return { name: 'manual', stats, close: () => rl.close() };
