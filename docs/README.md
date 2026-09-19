@@ -1,0 +1,135 @@
+# Start here
+
+These docs explain what this project does, how each part works, and **why it was built the
+way it is**. They're written so you can read them top to bottom and come away understanding
+the whole system, even if you've never looked at the code.
+
+Whenever a design choice rests on a measurement, the number is included along with when and
+where it was measured. Treat those numbers as evidence from one setup (a laptop on a US West
+Coast home internet connection, September 2026), not as fixed facts. Your numbers will differ
+somewhat.
+
+## What this project is
+
+This is a research project, not a trading bot. Nothing in it places real trades.
+
+It tests one idea: **a fast AI model that understands language might be able to make useful
+trading judgments quickly enough to matter.** Large AI models such as ChatGPT or Claude can
+read and reason, but they take seconds to answer. Jev, a model made by TypeSafe AI, is built
+for fast yes/no and multiple-choice style judgments and answers in a fraction of a second. If
+that speed plus understanding can predict price moves before the market finishes reacting,
+that's an edge.
+
+We reach Jev through **Vercel AI Gateway**, a service that forwards our requests to many AI
+models from one account.
+
+The project has two ways of testing the idea:
+
+1. **The market-data path** (`npm run live`, `record`, `backtest`, `analyze`). It watches
+   Bitcoin's order book and trades on Coinbase, summarizes what's happening into a short
+   paragraph, and asks Jev: "Will the price be higher, lower, or about the same in a few
+   seconds?"
+2. **The news path** (`npm run news`, `analyze:news`). It collects news as it's published
+   (from news feeds, a professional newswire, SEC filings, and official accounts on X) and
+   asks Jev, for each item: "Does this matter for Bitcoin or this stock? Which way would it
+   push the price? How much? Is it actually new?"
+
+Both paths write down every answer together with what the price did afterwards, so we can
+check later whether Jev's judgments were right, and whether they arrived fast enough to act on.
+
+### What we've learned so far
+
+- **Speed:** a Jev answer takes about a third of a second to come back through the gateway.
+  Most of that time is the gateway itself, not Jev (see [latency.md](latency.md)).
+- **The market-data path has a cost problem:** over seconds, Bitcoin's price barely moves.
+  Even a perfect prediction would earn less than the fees to trade on it. That's why the news
+  path exists: news can move prices by much more.
+- **Jev understands the news questions:** on test headlines it rated a surprise rate cut as
+  very bullish, an exchange shutting withdrawals as very bearish, and a bakery winning an
+  award as irrelevant. Whether its judgments are *profitable* needs real data collected over
+  time.
+
+## Reading order
+
+| Document | What you'll learn |
+|---|---|
+| [architecture.md](architecture.md) | How the pieces fit together and the few rules that hold everything together. Read this first. |
+| [latency.md](latency.md) | Where the time goes, measured step by step, and why that shaped the design. |
+| [news.md](news.md) | The news path in detail: sources, which assets an item is about, the questions, stock prices. |
+| [feed.md](feed.md) | How live market data is collected from Coinbase (Bitcoin) and Alpaca (stocks). |
+| [market.md](market.md) | How the order book is tracked, what the pipeline measures from it, and how it's summarized for Jev. |
+| [model.md](model.md) | How we call Jev, the questions we ask it, and the practice model used for free testing. |
+| [engine.md](engine.md) | The live loop of the market-data path and what gets recorded for each decision. |
+| [backtest-and-analysis.md](backtest-and-analysis.md) | Recording data, replaying it, and how the reports judge whether Jev is any good. |
+| [benchmark.md](benchmark.md) | The tool that measures Jev's response time. |
+| [operations.md](operations.md) | Running things, every setting, costs, fixing common problems, running on a Raspberry Pi. |
+| [decisions.md](decisions.md) | A numbered log of every major design decision: what we chose, why, and when to rethink it. |
+
+## Glossary
+
+| Term | Plain meaning |
+|---|---|
+| **Basis point (bp)** | One hundredth of a percent (0.01%). A 1% move is 100 bp. All price moves and costs in these docs are in bp. |
+| **Bid / ask** | The best price someone is willing to pay (bid) and the best price someone is willing to sell at (ask). |
+| **Spread** | The gap between the bid and the ask. Crossing it is part of the cost of trading. |
+| **Mid price** | Halfway between the bid and the ask. We use it as "the price" when measuring moves. |
+| **Order book** | The full list of buy and sell offers waiting at each price level. |
+| **Tick** | The smallest price step allowed. For Bitcoin on Coinbase it's $0.01, tiny compared to its ~$81,000 price. |
+| **Taker / aggressor** | The trader who accepts an existing offer and makes a trade happen immediately (as opposed to the one who was waiting). |
+| **Latency** | Delay: how long something takes. Usually in milliseconds (ms): 1,000 ms = 1 second. |
+| **Median (p50) / 90th percentile (p90)** | The typical case (half of samples are faster) and a slow case (only 10% are slower). |
+| **API** | A service built for programs to talk to. We use the official APIs of Coinbase, Alpaca, X, the SEC, and Vercel. |
+| **WebSocket** | A connection that stays open so a service can push updates to us the moment they happen, instead of us asking repeatedly. |
+| **Polling** | Asking a service "anything new?" on a timer. Simpler than a WebSocket but slower to notice news. |
+| **Rate limit** | A cap on how many requests a service accepts per period. Going over returns error 429 ("too many requests"). |
+| **Token** | The unit AI models count text in (roughly ¾ of a word). Jev charges by input tokens. |
+| **State** | The text we give Jev to judge: a summary of the market, or a headline plus context. |
+| **Question** | What we ask Jev about a state. Three kinds: **choice** (pick one option), **score** (rate on a scale), and **yes/no** (TypeSafe calls this "noul"). Jev answers each with probabilities. |
+| **Decision** | One call to Jev and everything we record about it. |
+| **Horizon** | How far ahead we check the price after a decision, e.g. 10 seconds or 30 minutes. |
+| **Signal** | A number that says "up" (positive) or "down" (negative) and how strongly. |
+| **Baseline** | A simple rule, such as "more buyers than sellers waiting means up next", that Jev has to beat to be worth anything. |
+| **Information coefficient (IC)** | A score from −1 to +1 for how well a signal ranked outcomes: +1 means its strongest "up" calls always saw the biggest rises, 0 means no relationship. |
+| **Backtest** | Running the decision process on recorded past data to see how it would have done. |
+| **Paper trading** | Recording what we *would* have done, without real money. |
+| **Instrument** | Something we can price a news item against: Bitcoin (`BTC-USD`) or a US stock ticker like `AAPL`. |
+| **Session** | For US stocks: `pre` (4:00–9:30 ET), `regular` (9:30–16:00), `post` (16:00–20:00), or `closed`. Bitcoin trades `24/7`. |
+| **IEX / SIP** | Two kinds of US stock price data from Alpaca. IEX (free) covers one exchange; SIP (paid) combines all exchanges. We use IEX. |
+| **Gateway** | Vercel AI Gateway, our default route to Jev. |
+| **Mock model** | A stand-in for Jev that gives random answers after a realistic delay, so everything can be tested for free. |
+
+## Map of the code
+
+```
+src/
+  config.ts             every setting, read from environment variables; default news feeds and X accounts
+  feed/types.ts         the common format for market data (MarketEvent) and the pipeline's clock
+  feed/coinbase.ts      live Bitcoin order book and trades from Coinbase
+  feed/alpaca.ts        shared connection code for Alpaca (sign in, reconnect, resubscribe)
+  feed/alpaca-stocks.ts live US stock prices from Alpaca, switched on only for stocks in the news
+  market/book.ts        the order book (every price level, kept sorted)
+  market/state.ts       everything we know about the Bitcoin market right now, plus recent history
+  market/encode.ts      turns the market measurements into the short text Jev reads
+  market/quotes.ts      price history for each stock
+  market/prices.ts      one way to ask "what did this cost at time t?" for Bitcoin and stocks alike
+  model/jev.ts          how we call Jev, the market-data questions, and the mock model
+  engine.ts             the live loop of the market-data path and its record format
+  live.ts               runs the market-data path live
+  record.ts             saves the Coinbase feed to disk
+  backtest.ts           replays saved data through the same code
+  analyze.ts            report for the market-data path
+  news/types.ts         the common format for news items
+  news/rss.ts           reads public news feeds (RSS/Atom)
+  news/alpaca.ts        reads the Benzinga newswire through Alpaca
+  news/edgar.ts         reads new SEC 8-K filings and finds each company's ticker
+  news/x.ts             reads posts from chosen official X accounts
+  news/manual.ts        lets you type test headlines
+  news/instruments.ts   decides which assets an item is about; US market hours
+  news/questions.ts     the questions Jev is asked about news, and what it's shown
+  news/engine.ts        the news loop and its record format
+  news-live.ts          runs the news path live
+  analyze-news.ts       report for the news path
+  lib/stats.ts          small math helpers (percentiles, rank correlation, safe number handling)
+bench/latency.ts        measures Jev's response time through the gateway
+examples/triage.ts      the smallest possible Jev example
+```

@@ -1,0 +1,30 @@
+{
+  "name": "jev",
+  "version": "1.0.0",
+  "description": "Research pipeline that asks TypeSafe's Jev (via Vercel AI Gateway) to judge news and market data for Bitcoin and US stocks. Paper trading only.",
+  "scripts": {
+    "typecheck": "tsc",
+    "bench": "node --env-file-if-exists=.env bench/latency.ts",
+    "live": "node --env-file-if-exists=.env src/live.ts",
+    "record": "node --env-file-if-exists=.env src/record.ts",
+    "backtest": "node --env-file-if-exists=.env src/backtest.ts",
+    "analyze": "node --env-file-if-exists=.env src/analyze.ts",
+    "example": "node --env-file-if-exists=.env examples/triage.ts",
+    "news": "node --env-file-if-exists=.env src/news-live.ts",
+    "analyze:news": "node --env-file-if-exists=.env src/analyze-news.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@ai-sdk/typesafe-ai": "^3.0.4",
+    "ai": "^7.0.107",
+    "fast-xml-parser": "^5.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "private": true
+}
