@@ -1,36 +1,25 @@
 // Record the normalized Coinbase feed to gzipped JSONL for offline backtests.
 //
 //   RUN_MINUTES=60 npm run record
+//
+// `npm run live` can do this at the same time as deciding (RECORD=1), which is the better
+// choice when you want a recording of exactly what a live run saw.
 
-import { createWriteStream, mkdirSync } from 'node:fs';
-import { createGzip } from 'node:zlib';
 import { config } from './config.ts';
 import { coinbaseFeed } from './feed/coinbase.ts';
-import { fileStamp, log, onStop } from './lib/run.ts';
+import { recorder } from './feed/recorder.ts';
+import { log, onStop } from './lib/run.ts';
 
-mkdirSync('data/raw', { recursive: true });
-const file = `data/raw/${config.product}-${fileStamp()}.jsonl.gz`;
-const gz = createGzip();
-const sink = gz.pipe(createWriteStream(file));
-
-let events = 0;
-const feed = coinbaseFeed(
-  config.product,
-  e => {
-    gz.write(JSON.stringify(e) + '\n');
-    events++;
-  },
-  log,
-);
-log(`recording ${config.product} -> ${file}`);
-const status = setInterval(() => log(`${events} events`), 30_000);
+const rec = recorder(config.product);
+const feed = coinbaseFeed(config.product, e => rec.write(e), log);
+log(`recording ${config.product} -> ${rec.file}`);
+const status = setInterval(() => log(`${rec.events} events`), 30_000);
 
 onStop(() => {
   clearInterval(status);
   feed.close();
-  sink.on('finish', () => {
-    log(`wrote ${events} events to ${file}`);
+  void rec.close().then(() => {
+    log(`wrote ${rec.events} events to ${rec.file}`);
     process.exit(0);
   });
-  gz.end();
 }, config.runMs);

@@ -2,11 +2,13 @@
 //
 //   npm run live                                   # gateway, run until Ctrl-C
 //   JEV_PROVIDER=mock RUN_MINUTES=5 npm run live   # full pipeline, simulated model
+//   RECORD=1 npm run live                          # also save the market data for replay
 
 import { mkdirSync, createWriteStream } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { config } from './config.ts';
 import { coinbaseFeed } from './feed/coinbase.ts';
+import { recorder } from './feed/recorder.ts';
 import { LiveEngine } from './engine.ts';
 import { fileStamp, log, onStop } from './lib/run.ts';
 import { summarize } from './lib/stats.ts';
@@ -16,7 +18,9 @@ mkdirSync('data/decisions', { recursive: true });
 const file = `data/decisions/live-${config.provider}-${fileStamp()}.jsonl`;
 const out = createWriteStream(file);
 
-const engine = new LiveEngine(createModel(config.provider), rec => out.write(JSON.stringify(rec) + '\n'), log);
+const engine = new LiveEngine(createModel(config.provider), r => out.write(JSON.stringify(r) + '\n'), log);
+// RECORD=1: save the events this run sees, so the exact same run can be replayed later.
+const rec = config.record ? recorder(config.product) : undefined;
 const stopWarm = keepWarm(config.provider, log); // matters when decisions are more than a few seconds apart
 
 // Per-window measurements of the data side: feed lag and event processing cost.
@@ -28,6 +32,7 @@ const feed = coinbaseFeed(
   config.product,
   e => {
     const t0 = performance.now();
+    rec?.write(e); // inside the timing, so "event cost" stays the true cost per event
     engine.onEvent(e);
     applyUs.push((performance.now() - t0) * 1000);
     events++;
@@ -38,7 +43,8 @@ const feed = coinbaseFeed(
 
 log(
   `live ${config.product} provider=${config.provider} encoding=${config.encoding} warmup=${config.warmupMs / 1000}s ` +
-    `spacing>=${config.minIntervalMs}ms flat=${config.flatSigmas > 0 ? `${config.flatSigmas} x typical move` : 'fixed'} -> ${file}`,
+    `spacing>=${config.minIntervalMs}ms flat=${config.flatSigmas > 0 ? `${config.flatSigmas} x typical move` : 'fixed'} -> ${file}` +
+    (rec ? `\nalso recording market data -> ${rec.file}` : ''),
 );
 
 const STATUS_MS = 10_000;
@@ -61,8 +67,9 @@ onStop(() => {
   stopWarm();
   feed.close();
   engine.flush(Infinity, true); // horizons that have not elapsed are recorded as unknown
-  out.end(() => {
-    log(`wrote ${engine.stats.written} decisions to ${file}`);
+  const decisions = new Promise<void>(resolve => out.end(resolve));
+  void Promise.all([decisions, rec?.close()]).then(() => {
+    log(`wrote ${engine.stats.written} decisions to ${file}` + (rec ? `, ${rec.events} events to ${rec.file}` : ''));
     process.exit(0);
   });
 }, config.runMs);

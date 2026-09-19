@@ -125,6 +125,7 @@ src/
   feed/coinbase.ts      live Bitcoin order book and trades from Coinbase
   feed/alpaca.ts        shared connection code for Alpaca (sign in, heartbeat, reconnect, resubscribe)
   feed/alpaca-stocks.ts live US stock prices from Alpaca, switched on only for stocks in the news
+  feed/recorder.ts      saves market events to a compressed file for later replay
   market/book.ts        the order book (every price level, kept sorted)
   market/state.ts       everything we know about the Bitcoin market right now, plus recent history
   market/encode.ts      turns the market measurements into the short text Jev reads
@@ -135,7 +136,7 @@ src/
   model/jev.ts          how we call Jev, its connection, the market-data questions, and the mock model
   engine.ts             the live loop of the market-data path and its record format
   live.ts               runs the market-data path live
-  record.ts             saves the Coinbase feed to disk
+  record.ts             saves the Coinbase feed to disk (live.ts can do this too, with RECORD=1)
   backtest.ts           replays saved data through the same code, paying for each answer once
   analyze.ts            report for the market-data path
   news/types.ts         the common format for news items

@@ -15,11 +15,16 @@ Testing the first question live is slow: one decision a second at best, and abou
 a gateway account without credits. So the plan is: record market data, replay it and ask Jev
 about many past moments at once, and only work on speed if there's something worth capturing.
 
-## Recording (`npm run record`)
+## Recording (`npm run record`, or `RECORD=1 npm run live`)
 
 Saves every standard market event from Coinbase into a compressed file under `data/raw/`. It
 saves the tidied-up events rather than Coinbase's raw messages, so replays don't need any
-Coinbase-specific code. Connection breaks are saved too, so a replay knows when the price was
+Coinbase-specific code.
+
+`npm run record` does only this and makes no model calls, so it's free and can run for as long
+as you like. `RECORD=1 npm run live` writes the same file while also deciding, which is what you
+want when the point is to replay exactly what a live run saw
+([engine.md](engine.md#saving-the-data-as-well)). Connection breaks are saved too, so a replay knows when the price was
 unknown. Three minutes came to about 4,000 events and 552 KB, which works out to roughly 11 MB an
 hour.
 

@@ -29,6 +29,7 @@ no keys, and no waiting, and the whole set runs in about a second.
 | `news-engine.test.ts` | the news loop end to end: one call per item, **no call when the outcome can't be measured**, repeats skipped, rate limits waited out, failures retried at most three times, records completed correctly |
 | `live-engine.test.ts` | the market-data loop: warm-up, spacing, pausing after a refusal, starting over after a feed break |
 | `lib.test.ts` | pause lengths after refusals, feed back-off, the "already seen" memory |
+| `recorder.test.ts` | a saved recording holds every event and is readable once closed |
 
 ## How the engines are tested without the outside world
 

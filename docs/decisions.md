@@ -419,3 +419,16 @@ network, about a second.
 without noticing: no price from the future, unknown is never zero, market hours across daylight
 saving, no call when the outcome can't be measured. The news engine takes its clock as a setting
 so that time-dependent rules can be tested on any day.
+
+## D44. A live run can save its own input
+
+**Chosen:** `RECORD=1 npm run live` writes the market events it sees to `data/raw/`, the same
+format `npm run record` produces, so that run can be replayed later. It's off by default.
+
+**Why:** you can already run both programs side by side, since extra connections to Coinbase's
+public feed are free. But two connections don't see quite the same thing: messages land at
+different moments, and a gap or reconnect can hit one and not the other. Recording from inside
+the live run means the file holds exactly what that run saw, so replaying it reproduces that
+run's decisions instead of something close to them. It's off by default because `record` on its
+own is free while `live` costs money, so the usual way to gather data for backtests is still to
+record without deciding (D14).

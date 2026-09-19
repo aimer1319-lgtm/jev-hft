@@ -61,6 +61,8 @@ export const DEFAULT_X_ACCOUNTS = ['federalreserve', 'SECGov', 'CFTC', 'USTreasu
 
 export const config = {
   product: process.env.PRODUCT || 'BTC-USD',
+  /** Save the raw market events as well, so a live run can be replayed later (RECORD=1). */
+  record: process.env.RECORD === '1',
   provider: process.env.JEV_PROVIDER || 'gateway',
   encoding: envChoice<Encoding>('JEV_ENCODING', 'compact', ['compact', 'json']),
   /**

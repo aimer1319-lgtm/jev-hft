@@ -7,6 +7,7 @@
 | `npm run news` | the news path, for Bitcoin and US stocks | `data/decisions/news-...jsonl` and `data/news/items-...jsonl` |
 | `npm run live` | the market-data path, live | `data/decisions/live-...jsonl` |
 | `npm run record` | saves Coinbase market data | `data/raw/BTC-USD-...jsonl.gz` |
+| `RECORD=1 npm run live` | the market-data path live, saving the data as well | both of the above |
 | `npm run backtest -- <file>` | replays saved data and asks Jev about it | `data/decisions/backtest-...jsonl` |
 | `npm run analyze -- <files>` | report for the market-data path | printed |
 | `npm run analyze:news -- <files>` | report for the news path | printed |
@@ -84,6 +85,7 @@ program with a clear message.
 | `PRODUCT` | `BTC-USD` | Coinbase product to watch |
 | `JEV_ENCODING` | `compact` | `compact` (labeled lines) or `json` |
 | `JEV_MIN_INTERVAL_MS` | `1000` | minimum time between questions. `0` asks back to back, about 2.7 a second, for about three times the cost |
+| `RECORD` | `0` | `1` makes `npm run live` save the market data it sees as well, so that exact run can be replayed later |
 | `JEV_MAX_INFLIGHT` | `1` | questions to Jev at the same time |
 | `JEV_TIMEOUT_MS` | `2000` | give up on answers slower than this |
 | `JEV_FLAT_SIGMAS` | `2` | what "flat" means in Jev's questions: a move smaller than this many typical moves for the horizon. `0` uses fixed thresholds (0.5, 1, and 3 bp) |

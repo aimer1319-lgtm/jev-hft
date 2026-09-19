@@ -76,6 +76,21 @@ If the run stops before a record's 60 seconds are up, the record is still writte
 for the prices that hadn't happened yet. The same goes for any price that falls inside a feed
 outage.
 
+## Saving the data as well
+
+`RECORD=1 npm run live` also writes every market event it sees to `data/raw/`, exactly as
+`npm run record` would, so the same run can be replayed later with `npm run backtest`.
+
+**Why not just run both programs?** You can, and nothing breaks: they open separate connections
+to Coinbase, which is free and unlimited. But two connections receive slightly different things.
+Messages arrive at different moments, a gap or a reconnect hits one and not the other, so the
+arrival times differ. Recording from inside the live run instead guarantees the file holds
+exactly the events that run saw, which means replaying it reproduces that run's decisions rather
+than something close to them.
+
+It costs about 40 millionths of a second per event (roughly double the per-event work, which is
+still about 0.02% of a decision) and about 11 MB an hour of disk.
+
 ## The status line
 
 Every 10 seconds `npm run live` prints something like:
