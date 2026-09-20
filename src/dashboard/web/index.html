@@ -63,7 +63,9 @@
         </div>
 
         <div class="stack" id="live-body" hidden>
-          <article class="card hero">
+          <p class="stopped-note" id="live-stopped" hidden>The market-data pipeline isn't running. This is what its last run left behind.</p>
+
+          <article class="card hero live-only">
             <div class="hero-main">
               <div class="hero-label">
                 <span id="product">BTC-USD</span>
@@ -83,7 +85,7 @@
             </dl>
           </article>
 
-          <article class="card chart-card">
+          <article class="card chart-card live-only">
             <header>
               <h2>Price and Jev's calls</h2>
               <div class="controls">
@@ -111,7 +113,32 @@
             </footer>
           </article>
 
-          <article class="card" id="decision-card">
+          <article class="card pnl-card">
+            <header>
+              <h2>If you had traded every answer</h2>
+              <span class="muted" id="pnl-sub"></span>
+            </header>
+            <div class="pnl-head">
+              <div>
+                <div class="pnl-money" id="pnl-money">—</div>
+                <div class="pnl-bps" id="pnl-bps">&nbsp;</div>
+              </div>
+              <div class="pnl-stake" id="pnl-stake"></div>
+            </div>
+            <div class="spark-wrap tall"><canvas id="equity-chart"></canvas></div>
+            <dl class="stats compact">
+              <div><dt>trades</dt><dd id="pnl-trades">—</dd></div>
+              <div title="Of the trades where the price moved at all"><dt>went your way</dt><dd id="pnl-win">—</dd></div>
+              <div title="Trades where the price was exactly where it started"><dt>no change</dt><dd id="pnl-flat">—</dd></div>
+              <div><dt>average each</dt><dd id="pnl-avg">—</dd></div>
+              <div><dt>best</dt><dd id="pnl-best">—</dd></div>
+              <div><dt>worst</dt><dd id="pnl-worst">—</dd></div>
+              <div title="The largest fall from a high point of the running total"><dt>worst dip</dt><dd id="pnl-dd">—</dd></div>
+            </dl>
+            <p class="footnote" id="pnl-note"></p>
+          </article>
+
+          <article class="card live-only" id="decision-card">
             <header>
               <h2>Latest answer</h2>
               <span class="muted" id="decision-age"></span>
@@ -131,7 +158,7 @@
             </div>
           </article>
 
-          <div class="row-2">
+          <div class="row-2 live-only">
             <article class="card">
               <header><h2>What Jev was shown</h2></header>
               <pre class="state-text" id="state-text">—</pre>
@@ -143,7 +170,7 @@
           </div>
 
           <div class="row-2 wide-right">
-            <article class="card">
+            <article class="card live-only">
               <header>
                 <h2>Response time</h2>
                 <span class="muted" id="lat-count"></span>

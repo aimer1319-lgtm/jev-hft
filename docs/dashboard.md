@@ -25,6 +25,18 @@ Everything the pipeline is doing, as it does it:
   finished so far in this run, and what's left of Jev's score once the rules are accounted for
   ([backtest-and-analysis.md](backtest-and-analysis.md)). Only decisions where the price actually
   moved are counted, and nothing is shown until there are at least 20 of those.
+- **If you had traded every answer:** the running total of what following Jev would have made,
+  with the curve over the run, how many trades went which way, and the worst dip along the way.
+  The rule is the plainest one that could really have been followed: every answer with a lean is
+  traded, all the same size, taking Jev's side at the mid price the moment the answer arrived and
+  closing at the horizon. Answers with no lean sit out. The buttons above the price chart pick
+  which horizon it is worked out for.
+
+  Two things are worth keeping in mind when reading it. Trades overlap, so it assumes you could
+  hold several at once. And prices are mid-to-mid, so by default nothing is charged for trading
+  at all: `FEE_BPS` adds a cost per round trip, which is the honest way to find out whether
+  anything survives it. Over short horizons the price is often exactly where it started, and
+  those trades are counted separately rather than as losses.
 
 **News** (when `npm run news` is running)
 
@@ -142,6 +154,8 @@ nothing at all while its tab is in the background.
 | `DASHBOARD_PORT` | `4000` | the page's port |
 | `TELEMETRY_PORT` | `4100` | the port the dashboard listens on for the pipeline's messages |
 | `DASHBOARD_HOST` | `127.0.0.1` | which network address to listen on. `0.0.0.0` makes the page reachable from other machines |
+| `FEE_BPS` | `0` | round-trip trading cost charged to every trade in the profit and loss |
+| `PNL_NOTIONAL_USD` | `10000` | the stake behind each trade, so the total can be shown in money |
 
 ## Watching a Raspberry Pi
 

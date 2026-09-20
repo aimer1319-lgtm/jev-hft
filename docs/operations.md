@@ -54,7 +54,8 @@ program with a clear message.
 | `AI_GATEWAY_MODEL` | `typesafe-ai/jev` | the model's name on the gateway |
 | `MOCK_LATENCY_MS` | `375` | how long the mock takes to answer |
 | `RUN_MINUTES` | `0` | stop after this many minutes (0 means run until stopped) |
-| `FEE_BPS` | `10` | trading cost used by the reports; set it to what your broker charges |
+| `FEE_BPS` | `0` | round-trip trading cost used by the reports and by the dashboard's profit and loss. Zero shows what the moves alone were worth; set it to what your broker charges to see what survives |
+| `PNL_NOTIONAL_USD` | `10000` | the stake behind each trade in the dashboard's profit and loss |
 
 **Dashboard** ([dashboard.md](dashboard.md))
 

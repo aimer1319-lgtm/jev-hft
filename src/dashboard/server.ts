@@ -22,11 +22,16 @@ import type { TelemetryEvent } from '../telemetry/events.ts';
 import { DashboardState, type DashboardEvent, type ServerEvent } from './collector.ts';
 import type { NewsItem } from '../news/types.ts';
 import { liveOutcome, newsOutcome, restoredEntry, scoreboard } from './outcomes.ts';
+import { pnlReport } from './pnl.ts';
 
 const HOST = process.env.DASHBOARD_HOST || '127.0.0.1';
 const HTTP_PORT = envNum('DASHBOARD_PORT', 4000, { min: 1 });
 const UDP_PORT = envNum('TELEMETRY_PORT', DEFAULT_TELEMETRY_PORT, { min: 1 });
 const MAX_SPREAD_BPS = envNum('MAX_SPREAD_BPS', 50, { min: 0 });
+/** Charged to both ends of every trade the profit-and-loss card counts. Zero by default: it shows what the moves alone were worth. */
+const FEE_BPS = envNum('FEE_BPS', 0, { min: 0 });
+/** The stake behind each trade, so the running total can be shown in money. */
+const NOTIONAL_USD = envNum('PNL_NOTIONAL_USD', 10_000, { min: 0 });
 const DECISIONS_DIR = 'data/decisions';
 const ITEMS_DIR = 'data/news';
 /** Finished decisions the scoreboard looks back over (about 50 minutes at one a second). */
@@ -182,8 +187,13 @@ function followRecords() {
   try {
     const before = tails.live.file;
     const fresh = parseLines<DecisionRecord>(readNew(tails.live));
-    // Each run of the pipeline writes its own file, and the scoreboard is about one run.
-    if (tails.live.file !== before) scored = [];
+    // Each run of the pipeline writes its own file, and the scoreboard is about one run. Clearing
+    // it counts as news in itself: a new run takes a minute to finish its first decision, and
+    // until then the last run's numbers would sit there looking like this one's.
+    if (tails.live.file !== before) {
+      scored = [];
+      scoreDirty = true;
+    }
     for (const rec of fresh) {
       publish(liveOutcome(rec));
       scored.push(rec);
@@ -198,6 +208,7 @@ function followRecords() {
     if (scoreDirty) {
       scoreDirty = false;
       publish({ type: 'scoreboard', program: 'live', board: scoreboard(scored) });
+      publish({ type: 'pnl', program: 'live', pnl: pnlReport(scored, { feeBps: FEE_BPS, notionalUsd: NOTIONAL_USD }) });
     }
   } catch (error) {
     log(`reading finished records: ${(error as Error).message}`);

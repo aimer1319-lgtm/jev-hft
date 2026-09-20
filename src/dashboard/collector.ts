@@ -44,10 +44,37 @@ export type Scoreboard = {
 };
 export type ScoreboardUpdate = { type: 'scoreboard'; program: 'live'; board: Scoreboard };
 
+/** What following Jev's leans at one horizon would have made: basis points on a fixed stake per trade. */
+export type PnlLeg = {
+  horizonS: number;
+  trades: number;
+  /** Trades that finished above and below water, after cost. Any left over neither made nor lost anything. */
+  wins: number;
+  losses: number;
+  totalBps: number;
+  avgBps: number | null;
+  bestBps: number | null;
+  worstBps: number | null;
+  /** The largest fall from a high point of the running total. */
+  maxDrawdownBps: number;
+  /** The running total over time, thinned for drawing. */
+  curve: { t: number; cumBps: number }[];
+};
+export type Pnl = {
+  /** Finished decisions it is based on, and the time of the oldest. */
+  n: number;
+  since: number | null;
+  /** The assumptions it was worked out under. */
+  feeBps: number;
+  notionalUsd: number;
+  legs: PnlLeg[];
+};
+export type PnlUpdate = { type: 'pnl'; program: 'live'; pnl: Pnl };
+
 /** A headline from before the dashboard started, restored from what the pipeline saved to disk. */
 export type NewsRestored = { type: 'news-restored'; program: 'news'; entry: NewsEntry };
 
-export type ServerEvent = LiveOutcome | NewsOutcome | ScoreboardUpdate | NewsRestored;
+export type ServerEvent = LiveOutcome | NewsOutcome | ScoreboardUpdate | PnlUpdate | NewsRestored;
 /** `rx` is when the dashboard server received it; `seq` orders everything the server hands out. */
 export type DashboardEvent = (TelemetryEvent | ServerEvent) & { rx: number; seq: number };
 
@@ -82,6 +109,7 @@ export type DashboardSnapshot = {
   live: { lastRx: number | null; pulse: LivePulse | null; ticks: Tick[]; decisions: Decision[] };
   news: { lastRx: number | null; pulse: NewsPulse | null; ticks: Tick[]; items: NewsEntry[] };
   scoreboard: Scoreboard | null;
+  pnl: Pnl | null;
 };
 
 /** Thirty minutes of one-a-second history, and a few hundred news items. */
@@ -96,6 +124,7 @@ export class DashboardState {
   live: DashboardSnapshot['live'] = { lastRx: null, pulse: null, ticks: [], decisions: [] };
   news: DashboardSnapshot['news'] = { lastRx: null, pulse: null, ticks: [], items: [] };
   scoreboard: Scoreboard | null = null;
+  pnl: Pnl | null = null;
 
   static from(snapshot: DashboardSnapshot): DashboardState {
     const s = new DashboardState();
@@ -103,18 +132,19 @@ export class DashboardState {
     s.live = snapshot.live;
     s.news = snapshot.news;
     s.scoreboard = snapshot.scoreboard;
+    s.pnl = snapshot.pnl;
     return s;
   }
 
   snapshot(serverTime: number): DashboardSnapshot {
-    return { seq: this.seq, serverTime, live: this.live, news: this.news, scoreboard: this.scoreboard };
+    return { seq: this.seq, serverTime, live: this.live, news: this.news, scoreboard: this.scoreboard, pnl: this.pnl };
   }
 
   /** Returns false for a message that is already reflected (a stream and a snapshot can overlap). */
   apply(e: DashboardEvent): boolean {
     if (e.seq <= this.seq) return false;
     this.seq = e.seq;
-    const fromPipeline = e.type !== 'scoreboard' && e.type !== 'outcome' && e.type !== 'news-outcome' && e.type !== 'news-restored';
+    const fromPipeline = e.type !== 'scoreboard' && e.type !== 'pnl' && e.type !== 'outcome' && e.type !== 'news-outcome' && e.type !== 'news-restored';
     if (fromPipeline) this[e.program].lastRx = e.rx;
 
     switch (e.type) {
@@ -154,6 +184,9 @@ export class DashboardState {
       }
       case 'scoreboard':
         this.scoreboard = e.board;
+        break;
+      case 'pnl':
+        this.pnl = e.pnl;
         break;
       case 'news-item': {
         const { type: _type, program: _program, v: _v, t: _t, rx: _rx, seq: _seq, ...item } = e;

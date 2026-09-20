@@ -471,3 +471,23 @@ this doesn't have.
 started in the same millisecond, chose the same file, and overwrote each other's records without
 any error. The process id makes that impossible.
 
+## D48. The dashboard's profit and loss follows a rule you could have followed
+
+**Chosen:** every answer with a lean is traded, all the same size, entering at the mid price when
+the answer arrived and closing at the horizon. Trading costs nothing unless `FEE_BPS` says
+otherwise, and trades where the price finished exactly where it started are counted apart from
+the ones that lost.
+
+**Why:** the report's "net edge" sorts a whole run into quintiles and compares the best signals
+with the worst. That measures how much the signal knows, but it is not a result you could have
+had, because picking the quintiles needs the run to be over. The dashboard answers the plainer
+question instead: follow every lean as it arrives, and see where you end up.
+
+Entering at the mid when the answer arrived, rather than at the snapshot, is the same rule the
+scoreboard uses: the snapshot price is gone by the time Jev replies. Counting unmoved trades
+apart matters more than it sounds, because over two seconds the price usually has not moved at
+all: treating those as losses would have shown a 7% success rate where the real figure was 53%.
+
+The zero default is deliberate. Real costs dwarf these moves, so mixing them in hides whether the
+signal is worth anything in the first place. Keeping them separate lets you see the signal first
+and then charge for trading with `FEE_BPS` to find out what is left.

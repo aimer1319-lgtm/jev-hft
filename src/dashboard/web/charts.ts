@@ -398,3 +398,106 @@ export class LatencyChart {
     ctx.fill();
   }
 }
+
+/** The running total of what Jev's answers would have made, in basis points, over time. */
+export class EquityChart {
+  private readonly surface: Surface;
+  private points: { t: number; cumBps: number }[] = [];
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.surface = new Surface(canvas, () => this.draw());
+  }
+
+  setData(points: { t: number; cumBps: number }[]) {
+    this.points = points;
+    this.draw();
+  }
+
+  private draw() {
+    const { ctx, width: W, height: H, theme } = this.surface;
+    ctx.clearRect(0, 0, W, H);
+    const pts = this.points;
+    if (pts.length < 2) return;
+
+    const right = W - 52;
+    const t0 = pts[0]!.t;
+    const t1 = pts[pts.length - 1]!.t;
+    const span = Math.max(1, t1 - t0);
+    const values = pts.map(p => p.cumBps);
+    // Zero is always on the chart: how far above or below the line you are is the whole point.
+    let lo = Math.min(0, ...values);
+    let hi = Math.max(0, ...values);
+    if (hi - lo < 1e-9) {
+      hi += 0.5;
+      lo -= 0.5;
+    }
+    const room = (hi - lo) * 0.12;
+    hi += room;
+    lo -= room;
+
+    const x = (t: number) => 4 + ((t - t0) / span) * (right - 4);
+    const y = (v: number) => H - 6 - ((v - lo) / (hi - lo)) * (H - 16);
+    const zero = y(0);
+    const last = values[values.length - 1]!;
+    const yLast = y(last);
+    const label = (v: number, digits: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(digits)}`;
+
+    ctx.font = `10.5px ${theme.mono}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    const step = niceStep(hi - lo, 3);
+    const digits = step < 1 ? 1 : 0;
+    for (let v = Math.ceil(lo / step) * step; v < hi; v += step) {
+      const gy = Math.round(y(v)) + 0.5;
+      ctx.strokeStyle = theme.line;
+      ctx.beginPath();
+      ctx.moveTo(4, gy);
+      ctx.lineTo(right, gy);
+      ctx.stroke();
+      if (Math.abs(y(v) - yLast) < 11) continue; // the running total's own label goes here
+      ctx.fillStyle = theme.faint;
+      ctx.fillText(label(v, digits), right + 6, y(v));
+    }
+
+    const path = new Path2D();
+    pts.forEach((p, i) => (i === 0 ? path.moveTo(x(p.t), y(p.cumBps)) : path.lineTo(x(p.t), y(p.cumBps))));
+    const fill = new Path2D(path);
+    fill.lineTo(x(t1), zero);
+    fill.lineTo(x(t0), zero);
+    fill.closePath();
+
+    // Shade the same shape twice, cut off at the break-even line, so gains and losses read apart.
+    const band = (color: string, from: number, to: number) => {
+      if (to - from < 0.5) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, from, W, to - from);
+      ctx.clip();
+      ctx.fillStyle = alpha(color, 0.16);
+      ctx.fill(fill);
+      ctx.restore();
+    };
+    band(theme.up, 0, zero);
+    band(theme.down, zero, H);
+
+    ctx.strokeStyle = alpha(theme.muted, 0.65);
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(4, Math.round(zero) + 0.5);
+    ctx.lineTo(right, Math.round(zero) + 0.5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const color = last > 0 ? theme.up : last < 0 ? theme.down : theme.flat;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.6;
+    ctx.lineJoin = 'round';
+    ctx.stroke(path);
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x(t1), yLast, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillText(label(last, 1), right + 6, yLast);
+  }
+}

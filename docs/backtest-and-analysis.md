@@ -68,10 +68,13 @@ for live runs, how much of that was TypeSafe itself against the network and gate
 total. Each is shown as typical (median), slow (90th percentile), and very slow (99th).
 
 **2. The "perfect foresight" line:** for each horizon, the average size of the price move. No
-prediction can earn more per trade than this, so compare it with your trading cost (`FEE_BPS`)
-before anything else. In our recorded data it was 0.05 to 0.1 bp at 1 second and 1 to 4 bp at 60
-seconds, against a cost of about 10 bp. That's why this path can't be profitable at these
-horizons, however good the predictions.
+prediction can earn more per trade than this, so compare it with your trading cost before
+anything else. In our recorded data it was 0.05 to 0.1 bp at 1 second and 1 to 4 bp at 60
+seconds, while a round trip really costs somewhere around 10 bp. That's why this path can't be
+profitable at these horizons, however good the predictions.
+
+`FEE_BPS` is what the report charges per round trip, and it is 0 by default, so the figures show
+what the moves alone were worth. Set it to what you would actually pay to see what survives.
 
 **3. How good each signal was,** for Jev and for the four simple rules, at each horizon:
 

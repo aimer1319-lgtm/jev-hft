@@ -1,7 +1,7 @@
 // Turns the dashboard's state into what is on the page. Each function owns one card, touches
 // the page only where something changed, and can be called as often as you like.
 
-import type { DashboardState, Decision, NewsEntry, Scoreboard } from '../collector.ts';
+import type { DashboardState, Decision, NewsEntry, Pnl, Scoreboard } from '../collector.ts';
 import * as f from './format.ts';
 
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -221,6 +221,45 @@ export function renderLatency(state: DashboardState) {
 }
 
 // ---- market data: scoreboard -------------------------------------------------------------------
+
+/** Money with the sign in front, so a loss reads as −$1.20 rather than $-1.20. */
+const usdSigned = (x: number) => `${x > 0 ? '+' : x < 0 ? '\u2212' : ''}$${Math.abs(x).toFixed(2)}`;
+
+/** What following every one of Jev's leans at the chosen horizon would have made. */
+export function renderPnl(pnl: Pnl | null, horizonS: number) {
+  const leg = pnl?.legs.find(l => l.horizonS === horizonS);
+  const total = $('pnl-money');
+  setText($('pnl-sub'), pnl && pnl.n > 0 ? `${f.int(pnl.n)} finished decisions \u00b7 held ${horizonS} s each` : '');
+  if (!pnl || !leg || leg.trades === 0) {
+    total.className = 'pnl-money';
+    setText(total, '\u2014');
+    setText($('pnl-bps'), '\u00a0');
+    setText($('pnl-stake'), '');
+    for (const id of ['pnl-trades', 'pnl-win', 'pnl-flat', 'pnl-avg', 'pnl-best', 'pnl-worst', 'pnl-dd']) setText($(id), '\u2014');
+    setHtml($('pnl-note'), `A trade only counts once the price ${horizonS} seconds after the answer is known, so this fills in about a minute behind the decisions themselves.`);
+    return;
+  }
+
+  const dollars = (leg.totalBps / 10_000) * pnl.notionalUsd;
+  total.className = `pnl-money ${leg.totalBps > 0 ? 'up' : leg.totalBps < 0 ? 'down' : ''}`;
+  setText(total, usdSigned(dollars));
+  setText($('pnl-bps'), `${f.bp(leg.totalBps)} in all`);
+  setHtml($('pnl-stake'), `$${f.int(pnl.notionalUsd)} a trade<br>${pnl.feeBps === 0 ? 'no trading costs' : `${f.fixed(pnl.feeBps, 1)} bp cost a trade`}`);
+  const decided = leg.wins + leg.losses;
+  setText($('pnl-trades'), f.int(leg.trades));
+  setText($('pnl-win'), decided > 0 ? f.pct(leg.wins / decided) : '\u2014');
+  setText($('pnl-flat'), f.int(leg.trades - decided));
+  setText($('pnl-avg'), f.bp(leg.avgBps, 2));
+  setText($('pnl-best'), f.bp(leg.bestBps));
+  setText($('pnl-worst'), f.bp(leg.worstBps));
+  setText($('pnl-dd'), f.bp(-leg.maxDrawdownBps));
+  setHtml(
+    $('pnl-note'),
+    `Every answer with a lean is traded, all the same size: take Jev's side at the mid price the moment the answer arrived, close ${horizonS} seconds later. Answers with no lean sit out. Trades overlap, so this assumes you could hold several at once.<br>
+     \u201cWent your way\u201d is a share of the ${f.int(decided)} trades where the price actually moved: over ${horizonS} s it often does not move at all, and those made nothing either way.<br>
+     Prices are mid-to-mid${pnl.feeBps === 0 ? ', with nothing charged for trading, so the gap between the buying and the selling price is not counted \u2014 set FEE_BPS to charge for it' : `, with ${f.fixed(pnl.feeBps, 1)} bp charged per round trip`}.`,
+  );
+}
 
 export function renderScoreboard(board: Scoreboard | null) {
   const el = $('scoreboard');

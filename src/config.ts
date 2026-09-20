@@ -86,8 +86,13 @@ export const config = {
   runMs: envNum('RUN_MINUTES', 0, { min: 0 }) * 60_000,
   /** Forward-return horizons (seconds) recorded for every decision. */
   horizons: [1, 2, 5, 10, 30, 60],
-  /** Round-trip trading cost used as the hurdle in analysis (fees + half-spread x2). */
-  feeBps: envNum('FEE_BPS', 10, { min: 0 }),
+  /**
+   * Round-trip trading cost (fees + half-spread x2), used as the hurdle in the report and
+   * charged to every trade in the dashboard's profit and loss. Zero by default, so both show
+   * what the moves alone were worth; set it to what you would really pay to see whether
+   * anything survives the cost of trading.
+   */
+  feeBps: envNum('FEE_BPS', 0, { min: 0 }),
 
   alpaca: {
     key: process.env.ALPACA_API_KEY_ID || '',

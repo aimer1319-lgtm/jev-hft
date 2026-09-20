@@ -2,7 +2,7 @@
 // up to date. All the work here happens in the browser; none of it reaches the pipeline.
 
 import { DashboardState, type DashboardEvent, type DashboardSnapshot } from '../collector.ts';
-import { LatencyChart, PriceChart } from './charts.ts';
+import { EquityChart, LatencyChart, PriceChart } from './charts.ts';
 import * as f from './format.ts';
 import * as view from './views.ts';
 
@@ -14,6 +14,9 @@ const dirty = new Set<string>();
 
 const chart = new PriceChart(view.$<HTMLCanvasElement>('chart'));
 const latency = new LatencyChart(view.$<HTMLCanvasElement>('latency-chart'));
+const equity = new EquityChart(view.$<HTMLCanvasElement>('equity-chart'));
+/** The horizon the chart marks and the profit and loss is worked out for. */
+let horizonS = 10;
 view.buildHorizons();
 view.buildGauges();
 
@@ -35,7 +38,7 @@ async function loadSnapshot() {
   }
   for (const e of buffered ?? []) accept(e);
   buffered = null;
-  for (const card of ['hero', 'chart', 'answer', 'gauges', 'latency', 'score', 'news', 'feed']) dirty.add(card);
+  for (const card of ['hero', 'chart', 'answer', 'gauges', 'latency', 'score', 'pnl', 'news', 'feed']) dirty.add(card);
 }
 
 function accept(e: DashboardEvent) {
@@ -63,6 +66,9 @@ function accept(e: DashboardEvent) {
       break;
     case 'scoreboard':
       dirty.add('score');
+      break;
+    case 'pnl':
+      dirty.add('pnl');
       break;
     default:
       dirty.add('feed');
@@ -95,10 +101,16 @@ function connect() {
 
 function frame() {
   if (dirty.size > 0) {
-    const live = state.live.pulse !== null;
+    // This side stays up after the pipeline stops: the scoreboard and the profit and loss come
+    // from the files it left behind, and a finished run is exactly when you want to read them.
+    const live = state.live.pulse !== null || (state.pnl?.n ?? 0) > 0;
     const news = state.news.pulse !== null || state.news.items.length > 0;
     view.$('live-empty').hidden = live;
     view.$('live-body').hidden = !live;
+    // With no telemetry coming in, only the cards read from the saved records have anything to say.
+    const running = state.live.pulse !== null;
+    view.$('live-body').dataset.running = String(running);
+    view.$('live-stopped').hidden = running;
     view.$('news-empty').hidden = news;
     view.$('news-body').hidden = !news;
 
@@ -113,6 +125,10 @@ function frame() {
         view.renderLatency(state);
       }
       if (dirty.has('score')) view.renderScoreboard(state.scoreboard);
+      if (dirty.has('pnl')) {
+        view.renderPnl(state.pnl, horizonS);
+        equity.setData(state.pnl?.legs.find(l => l.horizonS === horizonS)?.curve ?? []);
+      }
     }
     if (news) {
       if (dirty.has('news')) view.renderNewsSummary(state);
@@ -152,8 +168,10 @@ segmented('seg-window', ms => {
   dirty.add('hero');
 });
 segmented('seg-horizon', s => {
+  horizonS = s;
   chart.horizonS = s;
   chart.invalidate();
+  dirty.add('pnl');
 });
 
 // Dark / light. Follows the system until the button is used; after that the choice is remembered.
