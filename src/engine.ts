@@ -9,6 +9,7 @@ import { Backoff } from './lib/backoff.ts';
 import { encode } from './market/encode.ts';
 import { MarketState, type Features } from './market/state.ts';
 import { decide, directionSignal, flatThresholds, isTimeout, RateLimitedError, type FlatThresholds, type ModelResult } from './model/jev.ts';
+import type { Emit } from './telemetry/events.ts';
 
 export type DecisionRecord = {
   /** Record format version. Files written before versions existed have none. */
@@ -82,11 +83,15 @@ export class LiveEngine {
   private readonly model: EvaluationModel;
   private readonly write: (r: DecisionRecord) => void;
   private readonly log: (s: string) => void;
+  /** Tells the dashboard what is happening. Does nothing unless a runner wires it up. */
+  private readonly emit: Emit;
+  private asked = 0;
 
-  constructor(model: EvaluationModel, write: (r: DecisionRecord) => void, log: (s: string) => void) {
+  constructor(model: EvaluationModel, write: (r: DecisionRecord) => void, log: (s: string) => void, emit: Emit = () => {}) {
     this.model = model;
     this.write = write;
     this.log = log;
+    this.emit = emit;
   }
 
   onEvent(e: MarketEvent) {
@@ -129,9 +134,21 @@ export class LiveEngine {
     const text = encode(f, this.state, config.product, config.encoding);
     const flat = flatThresholds(f.vol60, config.flatSigmas);
     const tBuilt = nowMs();
+    const id = ++this.asked;
     this.inFlight++;
     try {
-      const res = await decide(this.model, text, flat, AbortSignal.timeout(config.timeoutMs));
+      // The request is started first and reported second, so telemetry is never in its way.
+      const answer = decide(this.model, text, flat, AbortSignal.timeout(config.timeoutMs));
+      this.emit({
+        type: 'ask',
+        program: 'live',
+        id,
+        tState,
+        state: text,
+        flatBps: flat,
+        features: { mid: f.mid, spreadBps: f.spreadBps, imb1: f.imb1, imb5: f.imb5, imb20: f.imb20, ret5: f.ret5, ret60: f.ret60, vol60: f.vol60, flow5: f.flow5, trades5: f.trades5 },
+      });
+      const res = await answer;
       const tResp = nowMs();
       this.backoff.succeed();
       this.stats.decisions++;
@@ -153,16 +170,35 @@ export class LiveEngine {
         fwdState: {},
         fwdResp: {},
       });
+      const rec = this.pending[this.pending.length - 1]!;
+      this.emit({
+        type: 'answer',
+        program: 'live',
+        id,
+        tResp,
+        modelMs: rec.modelMs,
+        providerMs: rec.providerMs ?? null,
+        inputTokens: rec.inputTokens ?? null,
+        costUsd: rec.costUsd ?? null,
+        probabilities: rec.probabilities,
+        confidence: rec.confidence ?? null,
+        signals: rec.signals,
+        midResp: rec.midResp,
+      });
     } catch (error) {
+      const message = (error as Error).message;
       if (error instanceof RateLimitedError) {
         this.stats.rateLimited++;
         const wait = this.backoff.fail(nowMs());
         this.log(`rate limited; pausing decisions ${(wait / 1000).toFixed(0)}s`);
+        this.emit({ type: 'fail', program: 'live', id, kind: 'rate-limit', message });
       } else if (isTimeout(error)) {
         this.stats.timeouts++;
+        this.emit({ type: 'fail', program: 'live', id, kind: 'timeout', message });
       } else {
         this.stats.errors++;
-        this.log(`model error: ${(error as Error).message}`);
+        this.log(`model error: ${message}`);
+        this.emit({ type: 'fail', program: 'live', id, kind: 'error', message });
       }
     } finally {
       this.inFlight--;

@@ -74,6 +74,7 @@ check later whether Jev's judgments were right, and whether they arrived fast en
 | [engine.md](engine.md) | The live loop of the market-data path and what gets recorded for each decision. |
 | [backtest-and-analysis.md](backtest-and-analysis.md) | Recording data, replaying it, and how the reports judge whether Jev is any good. |
 | [benchmark.md](benchmark.md) | The tool that measures Jev's response time. |
+| [dashboard.md](dashboard.md) | The live dashboard: what it shows, and how it watches the pipeline without slowing it down. |
 | [testing.md](testing.md) | What the tests protect, and how the engines are tested without the outside world. |
 | [operations.md](operations.md) | Running things, every setting, costs, fixing common problems, running on a Raspberry Pi. |
 | [decisions.md](decisions.md) | A numbered log of every major design decision: what we chose, why, and when to rethink it. |
@@ -96,6 +97,8 @@ check later whether Jev's judgments were right, and whether they arrived fast en
 | **WebSocket** | A connection that stays open so a service can push updates to us the moment they happen, instead of us asking repeatedly. |
 | **Polling** | Asking a service "anything new?" on a timer. Simpler than a WebSocket but slower to notice news. |
 | **Heartbeat** | A small regular message whose only job is to prove a connection is still alive. |
+| **Telemetry** | Messages a program sends out about what it's doing, for something else to display. Here: what the pipeline tells the dashboard. |
+| **UDP** | A way of sending a message over a network with no connection and no confirmation that it arrived. Useless for anything that matters, ideal for "tell whoever is watching, and never wait". |
 | **Rate limit** | A cap on how many requests a service accepts per period. Going over returns error 429 ("too many requests"). |
 | **Token** | The unit AI models count text in (roughly ¾ of a word). Jev charges by input tokens. |
 | **State** | The text we give Jev to judge: a summary of the market, or a headline plus context. |
@@ -149,6 +152,7 @@ src/
   news/instruments.ts   decides which assets an item is about, and how to name them to Jev
   news/memory.ts        remembers recent headlines: spots repeats, supplies "already reported" context
   news/questions.ts     the questions Jev is asked about news, and what it's shown
+  news/moves.ts         when a price move after a news decision counts (shared by the report and the dashboard)
   news/engine.ts        the news loop (what's worth asking, retries) and its record format
   news-live.ts          runs the news path live
   analyze-news.ts       report for the news path
@@ -157,6 +161,13 @@ src/
   lib/backoff.ts        the pause that grows after each rate-limit refusal
   lib/seen.ts           remembers which items a source has already reported
   lib/run.ts            start and stop handling shared by the long-running programs
+  telemetry/events.ts   every message the pipeline sends the dashboard
+  telemetry/sender.ts   sends them without ever making the pipeline wait
+  dashboard.ts          `npm run dashboard`: starts the dashboard server
+  dashboard/server.ts   the dashboard program: listens to the pipeline, reads its results, serves the page
+  dashboard/collector.ts  what the dashboard knows and how each message changes it (runs in the server AND the browser)
+  dashboard/outcomes.ts scores finished decisions: what happened next, Jev against the simple rules
+  dashboard/web/        the page itself: TypeScript, hand-drawn charts, no framework and no build step
 test/                   the tests, and stand-ins for the model, prices, and clock (see testing.md)
 bench/latency.ts        measures Jev's response time through the gateway
 examples/triage.ts      the smallest possible Jev example

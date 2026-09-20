@@ -2,6 +2,7 @@
 #   jev-hft@news-live   the news pipeline      (same as npm run news)
 #   jev-hft@record      save Coinbase data     (same as npm run record)
 #   jev-hft@live        the market-data loop   (same as npm run live)
+#   jev-hft@dashboard   the live dashboard     (same as npm run dashboard)
 #
 # deploy/pi/setup.sh fills in your user name, the project folder, and the path to Node.js,
 # then installs this file.

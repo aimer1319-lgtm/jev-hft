@@ -26,10 +26,13 @@ no keys, and no waiting, and the whole set runs in about a second.
 | `sources.test.ts` | reading RSS, Atom, and RDF feeds; SEC filing entries; the company list; X searches and posts |
 | `memory.test.ts` | what counts as a repeat headline, and which earlier headlines Jev is shown |
 | `model.test.ts` | how "flat" scales with volatility; the exact wording of questions; which failures are worth retrying; timeouts hidden inside the gateway's own errors |
-| `news-engine.test.ts` | the news loop end to end: one call per item, **no call when the outcome can't be measured**, repeats skipped, rate limits waited out, failures retried at most three times, records completed correctly |
+| `news-engine.test.ts` | (also: the dashboard is told what became of every headline, and why) the news loop end to end: one call per item, **no call when the outcome can't be measured**, repeats skipped, rate limits waited out, failures retried at most three times, records completed correctly |
 | `live-engine.test.ts` | the market-data loop: warm-up, spacing, pausing after a refusal, starting over after a feed break |
 | `lib.test.ts` | pause lengths after refusals, feed back-off, the "already seen" memory |
 | `recorder.test.ts` | a saved recording holds every event and is readable once closed |
+| `telemetry.test.ts` | messages for the dashboard leave together and later, never while the pipeline's own code is running; **a dashboard that's off, missing, or sent something unsendable is never the pipeline's problem** |
+| `collector.test.ts` | what the dashboard makes of each message: a question, its answer and its outcome end up together; restarts of the pipeline don't mix decisions up; history is bounded; headlines restored from disk slot in correctly |
+| `outcomes.test.ts` | the dashboard's scoreboard: only decisions where the price moved are judged, unknown stays unknown, and a Jev that merely repeats a rule scores nothing beyond it |
 
 ## How the engines are tested without the outside world
 

@@ -13,12 +13,17 @@ import { LiveEngine } from './engine.ts';
 import { fileStamp, log, onStop } from './lib/run.ts';
 import { summarize } from './lib/stats.ts';
 import { createModel, keepWarm } from './model/jev.ts';
+import { parseTarget, telemetrySender } from './telemetry/sender.ts';
 
 mkdirSync('data/decisions', { recursive: true });
 const file = `data/decisions/live-${config.provider}-${fileStamp()}.jsonl`;
 const out = createWriteStream(file);
 
-const engine = new LiveEngine(createModel(config.provider), r => out.write(JSON.stringify(r) + '\n'), log);
+// What the dashboard sees. Fire-and-forget: the pipeline never waits for it (docs/dashboard.md).
+const target = parseTarget(process.env.TELEMETRY);
+const telemetry = telemetrySender('live', target);
+
+const engine = new LiveEngine(createModel(config.provider), r => out.write(JSON.stringify(r) + '\n'), log, telemetry.emit);
 // RECORD=1: save the events this run sees, so the exact same run can be replayed later.
 const rec = config.record ? recorder(config.product) : undefined;
 const stopWarm = keepWarm(config.provider, log); // matters when decisions are more than a few seconds apart
@@ -44,14 +49,42 @@ const feed = coinbaseFeed(
 log(
   `live ${config.product} provider=${config.provider} encoding=${config.encoding} warmup=${config.warmupMs / 1000}s ` +
     `spacing>=${config.minIntervalMs}ms flat=${config.flatSigmas > 0 ? `${config.flatSigmas} x typical move` : 'fixed'} -> ${file}` +
-    (rec ? `\nalso recording market data -> ${rec.file}` : ''),
+    (rec ? `\nalso recording market data -> ${rec.file}` : '') +
+    (target ? `\ndashboard telemetry -> udp://${target.host}:${target.port} (npm run dashboard to watch; TELEMETRY=0 turns it off)` : ''),
 );
+
+// Once a second, tell the dashboard we are alive and what the numbers are. Everything here is
+// read from values that exist anyway; nothing is added to the handling of a market update.
+let eventCost: { p50: number; p99: number } | null = null;
+let seenEvents = 0;
+let seenLags = 0;
+const pulse = target
+  ? setInterval(() => {
+      if (events < seenEvents) seenEvents = 0; // the status window below was just reset
+      if (lags.length < seenLags) seenLags = 0;
+      const recent = lags.slice(seenLags).sort((a, b) => a - b);
+      const { book, ready } = engine.state;
+      const s = engine.stats;
+      telemetry.emit({
+        type: 'pulse',
+        program: 'live',
+        meta: { provider: config.provider, product: config.product, minIntervalMs: config.minIntervalMs, flatSigmas: config.flatSigmas, warmupMs: config.warmupMs, recording: rec !== undefined },
+        market: ready ? { ready, mid: book.mid, bid: book.bestBid, ask: book.bestAsk } : { ready, mid: null, bid: null, ask: null },
+        stats: { decisions: s.decisions, written: s.written, rateLimited: s.rateLimited, timeouts: s.timeouts, errors: s.errors, costUsd: s.costUsd },
+        feed: { eventsPerS: events - seenEvents, lagMs: recent.length > 0 ? recent[recent.length >> 1]! : null },
+        eventCostUs: eventCost,
+      });
+      seenEvents = events;
+      seenLags = lags.length;
+    }, 1000)
+  : undefined;
 
 const STATUS_MS = 10_000;
 const status = setInterval(() => {
   const s = engine.stats;
   const lag = summarize(lags);
   const ap = summarize(applyUs);
+  eventCost = { p50: ap.p50, p99: ap.p99 };
   log(
     `mid ${engine.state.book.mid.toFixed(2)}  ev/s ${(events / (STATUS_MS / 1000)).toFixed(0)}  feed lag p50 ${lag.p50.toFixed(0)}ms  ` +
       `event cost p50 ${ap.p50.toFixed(0)}µs p99 ${ap.p99.toFixed(0)}µs  decisions ${s.decisions}  written ${s.written}  ` +
@@ -64,6 +97,8 @@ const status = setInterval(() => {
 
 onStop(() => {
   clearInterval(status);
+  clearInterval(pulse);
+  telemetry.close();
   stopWarm();
   feed.close();
   engine.flush(Infinity, true); // horizons that have not elapsed are recorded as unknown

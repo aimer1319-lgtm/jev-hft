@@ -24,6 +24,11 @@ There are two parts, and each can be run on its own:
 Reports (`npm run analyze:news`, `npm run analyze`) then check how often Jev was right, whether
 its answers came fast enough to act on, and what they cost.
 
+A **live dashboard** (`npm run dashboard`, then <http://localhost:4000>) shows all of it as it
+happens: the price with Jev's calls marked on it, each answer and what Jev was shown, response
+times, headlines and what Jev made of them, and a running score of Jev against simple rules. It's
+a separate program that the pipeline never waits for, so watching costs the pipeline nothing.
+
 ## What we've found so far
 
 - **Speed:** Jev answers in about a quarter of a second through the gateway. More than half of
@@ -79,6 +84,7 @@ npm run record                            # save Coinbase market data to disk
 npm run backtest -- data/raw/<file>       # replay saved data and ask Jev about it
 npm run analyze:news -- data/decisions/news-<file>.jsonl
 npm run analyze -- data/decisions/<file>.jsonl
+npm run dashboard                         # watch it all live at http://localhost:4000
 npm run bench                             # measure Jev's response time
 npm run check                             # type check and tests
 ```
@@ -104,5 +110,6 @@ plain language. Good places to start:
 - [How it all fits together](docs/architecture.md)
 - [Where the time goes, and what it costs](docs/latency.md)
 - [The news path](docs/news.md)
+- [The live dashboard](docs/dashboard.md)
 - [Running it, settings, and a Raspberry Pi guide](docs/operations.md)
 - [Design decisions](docs/decisions.md)

@@ -15,6 +15,7 @@ import { nowMs } from '../feed/types.ts';
 import { Backoff } from '../lib/backoff.ts';
 import type { Prices } from '../market/prices.ts';
 import { ask, isTransient, RateLimitedError } from '../model/jev.ts';
+import type { Emit, NewsSkipReason } from '../telemetry/events.ts';
 import { instrument, route, sessionOf, type AssetClass, type Instrument, type Session } from './instruments.ts';
 import { RecentNews } from './memory.ts';
 import { newsQuestions, newsSignal, newsState } from './questions.ts';
@@ -79,6 +80,8 @@ export type NewsEngineOptions = {
   companyName?: (ticker: string) => string | undefined;
   /** The clock (tests replace it). */
   now?: () => number;
+  /** Tells the dashboard what is happening. Optional; the engine never waits on it. */
+  emit?: Emit;
   write: (r: NewsRecord) => void;
   log: (s: string) => void;
 };
@@ -118,11 +121,13 @@ export class NewsEngine {
   private pending: NewsRecord[] = [];
   private inFlight = 0;
   private readonly now: () => number;
+  private readonly emit: Emit;
 
   constructor(prices: Prices, opts: NewsEngineOptions) {
     this.prices = prices;
     this.opts = opts;
     this.now = opts.now ?? nowMs;
+    this.emit = opts.emit ?? (() => {});
     this.maxHorizonMs = Math.max(...opts.horizonsS) * 1000;
   }
 
@@ -135,12 +140,14 @@ export class NewsEngine {
     const symbols = route(item, this.opts.maxSymbolsPerItem, this.opts.untagged);
     if (symbols.length === 0) {
       this.stats.unpriceable++;
+      this.skipped(item, 'unpriceable', '');
       return;
     }
     const earlier = this.memory.duplicateOf(item, symbols);
     if (earlier) {
       this.stats.duplicates++;
       this.opts.log(`skip (repeat of "${earlier.headline.slice(0, 50)}"): ${item.headline.slice(0, 80)}`);
+      this.skipped(item, 'repeat', `Earlier: "${earlier.headline.slice(0, 120)}"`);
       return;
     }
     this.memory.add(item, symbols);
@@ -175,12 +182,17 @@ export class NewsEngine {
         this.stats.dropped++;
         this.memory.unanswered(q.item.id);
         this.opts.log(`dropped (waited ${((now - q.item.recvTs) / 1000).toFixed(0)}s): ${q.item.headline.slice(0, 80)}`);
+        this.skipped(q.item, 'dropped', `Waited ${((now - q.item.recvTs) / 1000).toFixed(0)} s.`);
       } else if (q.notBefore > now) i++;
       else {
         this.queue.splice(i, 1);
         void this.evaluate(q);
       }
     }
+  }
+
+  private skipped(item: NewsItem, reason: NewsSkipReason, detail: string) {
+    this.emit({ type: 'news-skip', program: 'news', id: item.id, reason, detail });
   }
 
   /** Put an item back in line, keeping the queue in order of arrival. */
@@ -210,6 +222,7 @@ export class NewsEngine {
         if (instruments.length === 0) {
           this.stats.closed++;
           this.memory.unanswered(item.id);
+          this.skipped(item, 'closed', '');
           return;
         }
       }
@@ -222,6 +235,7 @@ export class NewsEngine {
           this.stats.unpriced++;
           this.memory.unanswered(item.id);
           this.opts.log(`skip (${reasons.join('; ')}): ${item.headline.slice(0, 80)}`);
+          this.skipped(item, 'unpriced', reasons.join('; '));
           return;
         }
       }
@@ -283,6 +297,30 @@ export class NewsEngine {
       });
       this.stats.decisions++;
       this.opts.log(`jev ${(tResp - tBuilt).toFixed(0)}ms novel ${novel.toFixed(2)} | ${summary.join(' | ')} | ${item.source}: ${item.headline.slice(0, 80)}`);
+      const made = this.pending.slice(-instruments.length);
+      this.emit({
+        type: 'news-answer',
+        program: 'news',
+        id: item.id,
+        tResp,
+        queueMs: tPrepare - item.recvTs,
+        modelMs: tResp - tBuilt,
+        providerMs: res.meta.providerMs ?? null,
+        costUsd: res.meta.costUsd ?? null,
+        attempts: q.attempts,
+        novel,
+        verdicts: made.map((r, i) => ({
+          symbol: r.symbol,
+          name: instruments[i]!.name,
+          relevant: r.relevant,
+          direction: r.direction,
+          magnitude: r.magnitude,
+          signal: r.signal,
+          mid: r.midResp,
+          spreadBps: r.spreadBps,
+        })),
+        state,
+      });
     } catch (error) {
       const now = this.now();
       if (error instanceof RateLimitedError) {
@@ -290,14 +328,17 @@ export class NewsEngine {
         q.attempts--; // a refusal is not an attempt: the model never saw it
         this.requeue(q); // news is sparse: wait for capacity rather than lose the item
         this.opts.log(`rate limited; retrying queued news in ${(this.backoff.fail(now) / 1000).toFixed(0)}s`);
+        this.emit({ type: 'news-retry', program: 'news', id: item.id, kind: 'rate-limit', message: 'rate limited; waiting for capacity' });
       } else if (isTransient(error) && q.attempts < MAX_ATTEMPTS) {
         this.stats.retries++;
         q.notBefore = now + 2000 * q.attempts;
         this.requeue(q);
         this.opts.log(`model call failed (${(error as Error).message}); trying again in ${2 * q.attempts}s`);
+        this.emit({ type: 'news-retry', program: 'news', id: item.id, kind: 'failure', message: (error as Error).message });
       } else {
         this.stats.errors++;
         this.memory.unanswered(item.id);
+        this.skipped(item, 'lost', (error as Error).message);
         this.opts.log(`model error, item lost: ${(error as Error).message} | ${item.headline.slice(0, 80)}`);
       }
     } finally {

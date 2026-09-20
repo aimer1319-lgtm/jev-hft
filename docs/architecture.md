@@ -24,6 +24,10 @@ NEWS PATH (Bitcoin and US stocks, minutes ahead)
                                                                                              how big?)     prices from Alpaca (stocks)
 ```
 
+Both paths also tell a **live dashboard** what they're doing, through one-way messages they
+never wait on ([dashboard.md](dashboard.md)). It's a separate program, and the pipelines behave
+identically whether or not it's running.
+
 A third workflow reuses the market-data path offline: `record` saves the Coinbase data to a
 file, and `backtest` replays that file through exactly the same code to ask Jev about past
 moments, many at once. Its results use the same record format as live runs, so the same report
@@ -47,6 +51,8 @@ nothing downstream changes.
 | Engines | `src/engine.ts`, `src/news/engine.ts` | events or news items | records | decide when (and whether) to ask Jev, handle rate limits and failures, wait for the later prices, write records |
 | Runners | `src/live.ts`, `src/news-live.ts`, ... | settings | files and logs | connect the blocks, start and stop cleanly |
 | Reports | `src/analyze.ts`, `src/analyze-news.ts` | record files | printed reports | read-only; never assume a value is present |
+| Telemetry | `src/telemetry/` | what an engine says just happened | one-way messages to the dashboard | never makes the pipeline wait, never fails it, adds nothing to the handling of a market update |
+| Dashboard | `src/dashboard/` | those messages, plus the record files | a live web page | a separate program; reads the pipeline's files but never writes them |
 
 Small shared helpers live in `src/lib/`: statistics, a polite repeat-on-a-timer loop, a pause that
 grows after each refusal, an "already seen" memory, and start/stop handling for the runners. They
@@ -155,7 +161,7 @@ a time.
 
 ```
 data/
-  raw/BTC-USD-<time>.jsonl.gz              Coinbase data saved by `record`
+  raw/BTC-USD-<time>.jsonl.gz              Coinbase data saved by `record` (or `RECORD=1 live`)
   decisions/live-<provider>-<time>.jsonl     market-data decisions from `live`
   decisions/backtest-<provider>-<time>.jsonl market-data decisions from `backtest`
   decisions/news-<provider>-<time>.jsonl     news decisions from `news`
@@ -164,6 +170,10 @@ data/
   cache/x-users.json                        the ids of the X accounts we follow, looked up once
   test/                                     outputs from test runs with typed headlines, kept apart
 ```
+
+`<time>` is when the program started, followed by its process number
+(`2026-09-19T05-53-41-719Z-4821`), so two programs started at the same instant can never write to
+the same file.
 
 Every file is **JSON Lines**: one record per line. That format can be appended to as things
 happen, survives a crash up to the last complete line, and loads easily into other tools (for

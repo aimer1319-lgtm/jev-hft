@@ -21,6 +21,7 @@ import { rssSource } from './news/rss.ts';
 import { CompanyDirectory } from './news/tickers.ts';
 import { xSource } from './news/x.ts';
 import type { NewsItem, NewsSource } from './news/types.ts';
+import { parseTarget, telemetrySender } from './telemetry/sender.ts';
 
 const stamp = fileStamp();
 mkdirSync('data/decisions', { recursive: true });
@@ -44,6 +45,10 @@ const prices = new LivePrices(market, stocks);
 // requires automated readers to say who they are, so without NEWS_USER_AGENT it is not used.
 const companies = process.env.NEWS_USER_AGENT ? new CompanyDirectory(config.news.userAgent, log) : undefined;
 
+// What the dashboard sees. Fire-and-forget: the pipeline never waits for it (docs/dashboard.md).
+const target = parseTarget(process.env.TELEMETRY);
+const telemetry = telemetrySender('news', target);
+
 const engine = new NewsEngine(prices, {
   model: createModel(config.provider),
   provider: config.provider,
@@ -56,13 +61,32 @@ const engine = new NewsEngine(prices, {
   onlyTradable: config.news.onlyTradable,
   maxSpreadBps: config.news.maxSpreadBps,
   companyName: ticker => companies?.nameOf(ticker),
+  emit: telemetry.emit,
   write: rec => decisionsOut.write(JSON.stringify(rec) + '\n'),
   log,
 });
 
 const feed = coinbaseFeed(config.product, e => market.apply(e), log);
 // The engine runs on its own clock tick, so stock news keeps flowing even if Coinbase is down.
-const ticker = setInterval(() => engine.tick(nowMs()), 1000);
+// The same tick tells the dashboard we are alive (nothing is built when telemetry is off).
+const sources: NewsSource[] = [];
+const pulse = target
+  ? () =>
+      telemetry.emit({
+        type: 'pulse',
+        program: 'news',
+        meta: { provider: config.provider, onlyTradable: config.news.onlyTradable, maxSpreadBps: config.news.maxSpreadBps, horizonsS: config.news.horizons },
+        market: { ready: market.ready, mid: market.ready ? market.book.mid : null },
+        stats: { ...engine.stats },
+        queued: engine.queued,
+        stocks: stocks ? { watching: stocks.stats.watching, max: config.alpaca.maxSymbols, rejected: stocks.stats.rejected, reconnects: stocks.stats.reconnects } : null,
+        sources: sources.map(src => ({ name: src.name, ...src.stats })),
+      })
+  : () => {};
+const ticker = setInterval(() => {
+  engine.tick(nowMs());
+  pulse();
+}, 1000);
 const stopWarm = keepWarm(config.provider, log);
 
 const onItem = (item: NewsItem) => {
@@ -70,10 +94,21 @@ const onItem = (item: NewsItem) => {
   const lag = item.publishedTs ? `${((item.recvTs - item.publishedTs) / 1000).toFixed(0)}s after publish` : 'no publish time';
   const tags = item.symbols ? `[${item.symbols.join(',') || 'unpriceable'}]` : '[untagged]';
   log(`NEWS ${item.source} (${lag}) ${tags} ${item.headline}`);
+  telemetry.emit({
+    type: 'news-item',
+    program: 'news',
+    id: item.id,
+    source: item.source,
+    sourceLabel: item.sourceLabel ?? item.source,
+    headline: item.headline,
+    url: item.url ?? null,
+    publishedTs: item.publishedTs ?? null,
+    recvTs: item.recvTs,
+    symbols: item.symbols ?? null,
+  });
   engine.onItem(item);
 };
 
-const sources: NewsSource[] = [];
 const pollOpts = { intervalMs: config.news.pollMs, fastIntervalMs: config.news.fastPollMs, userAgent: config.news.userAgent, log };
 if (config.news.sources.includes('rss')) for (const f of config.news.feeds) sources.push(rssSource(f, pollOpts, onItem));
 if (config.news.sources.includes('alpaca')) {
@@ -93,7 +128,8 @@ if (config.news.manual) sources.push(manualSource(onItem, log));
 
 log(
   `news provider=${config.provider} sources=${sources.map(s => s.name).join(',')} stocks=${stocks ? `alpaca/${config.alpaca.feed} (max ${config.alpaca.maxSymbols} live)` : 'none'} ` +
-    `${config.news.onlyTradable ? 'asking only about instruments that can be priced now' : 'asking about every routed instrument'} -> ${decisionsFile}`,
+    `${config.news.onlyTradable ? 'asking only about instruments that can be priced now' : 'asking about every routed instrument'} -> ${decisionsFile}` +
+    (target ? `\ndashboard telemetry -> udp://${target.host}:${target.port} (npm run dashboard to watch; TELEMETRY=0 turns it off)` : ''),
 );
 
 const status = setInterval(() => {
@@ -112,6 +148,7 @@ const status = setInterval(() => {
 onStop(() => {
   clearInterval(status);
   clearInterval(ticker);
+  telemetry.close();
   stopWarm();
   for (const src of sources) src.close();
   companies?.close();

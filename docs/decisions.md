@@ -432,3 +432,42 @@ the live run means the file holds exactly what that run saw, so replaying it rep
 run's decisions instead of something close to them. It's off by default because `record` on its
 own is free while `live` costs money, so the usual way to gather data for backtests is still to
 record without deciding (D14).
+
+## D45. The dashboard is a separate program, fed by messages nobody waits for
+
+**Chosen:** `npm run dashboard` is its own process. The pipeline tells it what's happening
+through small UDP messages that need no connection and get no reply. They're prepared after the
+pipeline has dealt with any market data already waiting, and the question to Jev is sent before
+the dashboard is told about it. Nothing is added to the handling of a market update. What
+happened after each decision is read from the result files the pipeline already writes.
+
+**Why:** watching must never cost a decision anything. A web server inside the pipeline would
+share its one thread with every browser connected to it, and a slow or broken page could then
+delay or crash the thing it's watching. With one-way messages there's nothing to wait for and
+nothing that can push back: if the dashboard is slow, stopped, or was never started, the messages
+just disappear. Measured side by side on the same market, handling a market update took the same
+time with telemetry on as off: the copy with telemetry landed between two identical copies
+without it, which differed from each other by more than it differed from either. Noting an event costs about 0.3 millionths of a second.
+It's on by default for that reason, and `TELEMETRY=0` removes it entirely.
+
+## D46. The dashboard's page has no framework and no build step
+
+**Chosen:** the page is plain TypeScript with charts drawn by hand on `<canvas>`. The server
+blanks out the types as it serves each file, which Node can do itself. The logic for "what does
+this message mean" is one file used by both the server and the browser.
+
+**Why:** it keeps the project's rule that what's in the repo is what runs, adds no packages, and
+works on a home network or a Raspberry Pi with no internet. One shared piece of state logic means
+the server's history and the page's live view can't drift apart. **Rethink** if the page grows
+far beyond a monitoring screen; a framework earns its keep with many interacting views, which
+this doesn't have.
+
+## D47. Every run's files carry its process number
+
+**Chosen:** output file names end with the time the program started and its process id
+(`live-gateway-2026-09-19T05-53-41-719Z-4821.jsonl`).
+
+**Why:** the time alone is only unique to the millisecond. In a side-by-side test three copies
+started in the same millisecond, chose the same file, and overwrote each other's records without
+any error. The process id makes that impossible.
+

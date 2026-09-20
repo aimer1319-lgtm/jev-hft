@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { NewsEngine, type NewsRecord } from '../src/news/engine.ts';
 import type { NewsItem } from '../src/news/types.ts';
+import type { TelemetryBody } from '../src/telemetry/events.ts';
 import { FakePrices, scriptedModel, settle, type Step } from './helpers.ts';
 
 const WEDNESDAY_NOON_NY = Date.parse('2026-07-15T16:00:00Z'); // regular session
@@ -14,6 +15,7 @@ function setup(script: Step[] = [], opts: { start?: number; onlyTradable?: boole
   const { model, calls } = scriptedModel(script);
   const written: NewsRecord[] = [];
   const logs: string[] = [];
+  const told: TelemetryBody[] = []; // what the dashboard would be told
   const engine = new NewsEngine(prices, {
     model,
     provider: 'test',
@@ -27,12 +29,13 @@ function setup(script: Step[] = [], opts: { start?: number; onlyTradable?: boole
     maxSpreadBps: 50,
     companyName: t => (t === 'AAPL' ? 'Apple Inc.' : undefined),
     now: () => now,
+    emit: e => told.push(e),
     write: r => written.push(r),
     log: s => logs.push(s),
   });
   let n = 0;
   const item = (headline: string, symbols?: string[]): NewsItem => ({ id: `t:${++n}`, source: 'test', sourceLabel: 'newswire', headline, publishedTs: now - 5000, recvTs: now, ...(symbols ? { symbols } : {}) });
-  return { engine, prices, calls, written, logs, item, advance: (ms: number) => (now += ms), now: () => now };
+  return { engine, prices, calls, written, logs, told, item, advance: (ms: number) => (now += ms), now: () => now };
 }
 
 test('an item becomes one call and one complete record per instrument, written once its last horizon has passed', async () => {
@@ -231,4 +234,51 @@ test('an item that waited too long for the model is dropped, and counted', async
   await settle();
   assert.equal(s.calls.length, 1);
   assert.equal(s.engine.stats.dropped, 1);
+});
+
+test('the dashboard is told what became of every headline, and why', async () => {
+  const s = setup(['server-error']);
+  s.prices.set('MSFT', { mid: 400, spreadBps: 900 });
+  s.engine.onItem(s.item('Bitcoin ETF approved', ['BTC-USD'])); // fails once, then answered
+  s.engine.onItem(s.item('Bitcoin ETF approved!', ['BTC-USD'])); // a repeat
+  s.engine.onItem(s.item('Ether upgrade', [])); // nothing we can price
+  s.engine.onItem(s.item('Microsoft wins contract', ['MSFT'])); // quote too wide
+  await settle();
+  s.advance(3000);
+  s.engine.tick(s.now());
+  await settle();
+
+  const about = (id: string) => s.told.filter(e => 'id' in e && e.id === id).map(e => (e.type === 'news-skip' ? `skip:${e.reason}` : e.type));
+  assert.deepEqual(about('t:1'), ['news-retry', 'news-answer']);
+  assert.deepEqual(about('t:2'), ['skip:repeat']);
+  assert.deepEqual(about('t:3'), ['skip:unpriceable']);
+  assert.deepEqual(about('t:4'), ['skip:unpriced']);
+
+  const answer = s.told.find(e => e.type === 'news-answer')!;
+  assert.ok(answer.type === 'news-answer');
+  assert.equal(answer.attempts, 2);
+  assert.deepEqual(answer.verdicts.map(v => [v.symbol, v.name, v.relevant]), [['BTC-USD', 'Bitcoin', 0.9]]);
+  assert.equal((answer.state as { headline: string }).headline, 'Bitcoin ETF approved', 'exactly what Jev was shown');
+  const skip = s.told.find(e => e.type === 'news-skip' && e.reason === 'unpriced')!;
+  assert.match((skip as { detail: string }).detail, /MSFT quote is 900bp wide/);
+});
+
+test('a closed market, a lost item and a dropped one are reported too', async () => {
+  const closed = setup([], { start: SATURDAY });
+  closed.engine.onItem(closed.item('Apple raises guidance', ['AAPL']));
+  await settle();
+  assert.deepEqual(closed.told.map(e => e.type === 'news-skip' && e.reason), ['closed']);
+
+  const lost = setup(['bad-request']);
+  lost.engine.onItem(lost.item('Bitcoin ETF approved', ['BTC-USD']));
+  await settle();
+  assert.deepEqual(lost.told.map(e => e.type === 'news-skip' && e.reason), ['lost']);
+
+  const dropped = setup(['rate-limit']);
+  dropped.engine.onItem(dropped.item('Bitcoin ETF approved', ['BTC-USD']));
+  await settle();
+  dropped.advance(301_000);
+  dropped.engine.tick(dropped.now());
+  await settle();
+  assert.deepEqual(dropped.told.map(e => (e.type === 'news-skip' ? e.reason : e.type)), ['news-retry', 'dropped']);
 });

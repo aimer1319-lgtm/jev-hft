@@ -3,6 +3,7 @@
 #
 #   ./deploy/pi/setup.sh                    install and start the news pipeline
 #   ./deploy/pi/setup.sh --service record   run "save Coinbase data" instead (or: live)
+#   ./deploy/pi/setup.sh --service dashboard  also run the live dashboard (see docs/dashboard.md)
 #   ./deploy/pi/setup.sh --no-start         install everything but don't start it yet
 #   ./deploy/pi/setup.sh --dry-run          show what would happen without changing anything
 set -euo pipefail
@@ -13,7 +14,7 @@ DRY_RUN=0
 NODE_MAJOR=24
 
 usage() {
-  sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -29,8 +30,8 @@ done
 
 case "$SERVICE" in
   news | news-live) SERVICE=news-live ;;
-  record | live) ;;
-  *) echo "--service must be news, record, or live" >&2; exit 1 ;;
+  record | live | dashboard) ;;
+  *) echo "--service must be news, record, live, or dashboard" >&2; exit 1 ;;
 esac
 
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -93,13 +94,17 @@ else
 fi
 has_key() { [ -f .env ] && grep -qE "^$1=.+" .env; }
 provider="$( (grep -E '^JEV_PROVIDER=' .env 2>/dev/null || true) | tail -1 | cut -d= -f2- | tr -d '"')"
-if [ "$SERVICE" != record ] && [ "${provider:-gateway}" = gateway ] && ! has_key AI_GATEWAY_API_KEY; then
+# Saving market data and showing the dashboard never call Jev, so they need no gateway key.
+if [ "$SERVICE" != record ] && [ "$SERVICE" != dashboard ] && [ "${provider:-gateway}" = gateway ] && ! has_key AI_GATEWAY_API_KEY; then
   if [ "$DRY_RUN" = 1 ]; then warn "AI_GATEWAY_API_KEY is missing from .env"; else fail "AI_GATEWAY_API_KEY is missing from .env; the pipeline can't reach Jev without it"; fi
 fi
 if [ "$SERVICE" = news-live ]; then
   { has_key ALPACA_API_KEY_ID && has_key ALPACA_API_SECRET_KEY; } || warn "no Alpaca keys: no stock prices and no Benzinga news"
   has_key X_BEARER_TOKEN || warn "no X_BEARER_TOKEN: the X source will be skipped"
   has_key NEWS_USER_AGENT || warn "no NEWS_USER_AGENT: the SEC filing source will be skipped"
+fi
+if [ "$SERVICE" = dashboard ] && ! grep -qE '^DASHBOARD_HOST=.+' .env 2>/dev/null; then
+  warn "DASHBOARD_HOST isn't set in .env, so the dashboard will only be reachable from the Pi itself. Add DASHBOARD_HOST=0.0.0.0 to open it from another computer on your network (it has no password)."
 fi
 echo ".env is in place (private to $(id -un))"
 

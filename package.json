@@ -13,6 +13,7 @@
     "analyze": "node --env-file-if-exists=.env src/analyze.ts",
     "example": "node --env-file-if-exists=.env examples/triage.ts",
     "news": "node --env-file-if-exists=.env src/news-live.ts",
+    "dashboard": "node --env-file-if-exists=.env src/dashboard.ts",
     "analyze:news": "node --env-file-if-exists=.env src/analyze-news.ts"
   },
   "keywords": [],

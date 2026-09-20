@@ -3,6 +3,7 @@ import { afterEach, test } from 'node:test';
 import { config } from '../src/config.ts';
 import { LiveEngine, type DecisionRecord } from '../src/engine.ts';
 import { nowMs, type MarketEvent } from '../src/feed/types.ts';
+import type { TelemetryBody } from '../src/telemetry/events.ts';
 import { scriptedModel, settle, type Step } from './helpers.ts';
 
 const defaults = { warmupMs: config.warmupMs, minIntervalMs: config.minIntervalMs, maxInFlight: config.maxInFlight, flatSigmas: config.flatSigmas };
@@ -24,8 +25,9 @@ function setup(script: Step[] = []) {
   const { model, calls } = scriptedModel(script);
   const written: DecisionRecord[] = [];
   const logs: string[] = [];
-  const engine = new LiveEngine(model, r => written.push(r), s => logs.push(s));
-  return { engine, calls, written, logs };
+  const told: TelemetryBody[] = []; // what the dashboard would be told
+  const engine = new LiveEngine(model, r => written.push(r), s => logs.push(s), e => told.push(e));
+  return { engine, calls, written, logs, told };
 }
 
 test('no question is asked until the history windows have had time to fill', async () => {
@@ -112,4 +114,38 @@ test('a broken feed stops decisions until the book is rebuilt and warmed up agai
   s.engine.onEvent(book(t + 16_000, 100));
   await settle();
   assert.equal(s.calls.length, 1);
+});
+
+test('the dashboard is told about each question and what came of it', async () => {
+  Object.assign(config, { warmupMs: 0, minIntervalMs: 1000 });
+  const s = setup(['ok', 'rate-limit']);
+  const t = nowMs();
+  s.engine.onEvent(book(t, 100, true));
+  await settle();
+  s.engine.onEvent(book(t + 1000, 101));
+  await settle();
+
+  assert.deepEqual(s.told.map(e => `${e.type}:${'id' in e ? e.id : ''}`), ['ask:1', 'answer:1', 'ask:2', 'fail:2']);
+  const [ask, answer, , fail] = s.told as [TelemetryBody, TelemetryBody, TelemetryBody, TelemetryBody];
+  assert.ok(ask.type === 'ask' && answer.type === 'answer' && fail.type === 'fail');
+  assert.match(ask.state, /^BTC-USD/, 'exactly the text Jev was sent');
+  assert.deepEqual(ask.flatBps, { dir_2s: 0.5, dir_10s: 1, dir_60s: 3 });
+  assert.equal(ask.features.mid, 100);
+  assert.ok(Math.abs(answer.signals.jev_10s! - 0.7) < 1e-12);
+  assert.deepEqual([answer.providerMs, answer.costUsd, answer.midResp], [120, 0.000025, 100]);
+  assert.equal(fail.kind, 'rate-limit');
+  // Telemetry describes the decision; it is not a second copy of the record, which is written as before.
+  s.engine.flush(Infinity, true);
+  assert.equal(s.written.length, 1);
+});
+
+test('an engine nobody is watching behaves exactly the same', async () => {
+  Object.assign(config, { warmupMs: 0, minIntervalMs: 3_600_000 }); // one question, then quiet, so the test can end
+  const { model } = scriptedModel();
+  const written: DecisionRecord[] = [];
+  const engine = new LiveEngine(model, r => written.push(r), () => {}); // no emit given
+  engine.onEvent(book(nowMs(), 100, true));
+  await settle();
+  engine.flush(Infinity, true);
+  assert.equal(written.length, 1);
 });

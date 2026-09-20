@@ -51,10 +51,25 @@ pipeline:
 ```bash
 ./deploy/pi/setup.sh --service record    # save Coinbase market data around the clock (for backtests)
 ./deploy/pi/setup.sh --service live      # the market-data loop (needs gateway credits; about $3 a day)
+./deploy/pi/setup.sh --service dashboard # the live dashboard, to watch the Pi from another computer
 ```
 
-Each runs as its own service (`jev-hft@record`, `jev-hft@live`). Saving market data writes about
+Each runs as its own service (`jev-hft@record`, `jev-hft@live`, `jev-hft@dashboard`). Saving market data writes about
 260 MB a day, so use an SSD rather than the SD card for that.
+
+## Watching it from your laptop
+
+Run the dashboard as a second service and open it in a browser:
+
+1. Add `DASHBOARD_HOST=0.0.0.0` to the Pi's `.env` (otherwise the page is only reachable from the
+   Pi itself).
+2. `./deploy/pi/setup.sh --service dashboard`
+3. Open `http://<pi-address>:4000` on your laptop.
+
+The dashboard is a separate program: the pipeline sends it one-way messages and never waits for
+it, so running it costs the pipeline nothing, and stopping it changes nothing
+([docs/dashboard.md](../../docs/dashboard.md)). The page has no password and can't control
+anything, but anyone on your network can read it, so don't expose it to the internet.
 
 ## How the service behaves
 

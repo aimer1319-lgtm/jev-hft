@@ -11,6 +11,7 @@
 | `npm run backtest -- <file>` | replays saved data and asks Jev about it | `data/decisions/backtest-...jsonl` |
 | `npm run analyze -- <files>` | report for the market-data path | printed |
 | `npm run analyze:news -- <files>` | report for the news path | printed |
+| `npm run dashboard` | the live dashboard, at <http://localhost:4000> | a web page; it saves nothing |
 | `npm run bench` | measures Jev's response time | printed |
 | `npm run example` | the smallest possible Jev call | printed |
 | `npm test` | runs the tests (about a second, no network or keys needed) | printed |
@@ -54,6 +55,15 @@ program with a clear message.
 | `MOCK_LATENCY_MS` | `375` | how long the mock takes to answer |
 | `RUN_MINUTES` | `0` | stop after this many minutes (0 means run until stopped) |
 | `FEE_BPS` | `10` | trading cost used by the reports; set it to what your broker charges |
+
+**Dashboard** ([dashboard.md](dashboard.md))
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `TELEMETRY` | `1` | where `live` and `news` send their one-way messages for the dashboard. `1` is this machine; `0` or `off` sends nothing; `host` or `host:port` sends them to another machine |
+| `DASHBOARD_PORT` | `4000` | the page's port |
+| `TELEMETRY_PORT` | `4100` | the port the dashboard listens on for those messages |
+| `DASHBOARD_HOST` | `127.0.0.1` | `0.0.0.0` makes the page reachable from other machines on your network. It has no password |
 
 **News path**
 
@@ -168,6 +178,9 @@ account without credits the two copies would share the same few calls.
 | `[news:x] could not look up account ids` | the one-time lookup failed | nothing; posts show the author's id for now and it tries again in 10 minutes |
 | `[news:...] HTTP 403` on a feed | the site blocks automated readers | remove that feed |
 | `[coinbase] sequence gap ...` or `no messages for 10s` | a market message went missing, or the connection died | nothing; it rebuilds the book automatically, and prices during the break are recorded as unknown |
+| the dashboard says a pipeline "isn't running" when it is | the pipeline was started with `TELEMETRY=0`, or the two use different ports, or they're on different machines | start the pipeline without `TELEMETRY=0`; check `TELEMETRY_PORT`; across machines set `TELEMETRY=<dashboard's address>` and `DASHBOARD_HOST=0.0.0.0` |
+| the dashboard's scoreboard stays empty | decisions are scored once their outcome is saved, a minute later, and only when the price actually moved | wait; a quiet market fills it slowly |
+| `listen EADDRINUSE` when starting the dashboard | another copy is already running, or something else uses the port | stop the other copy, or set `DASHBOARD_PORT` / `TELEMETRY_PORT` |
 | no news for a long time | normal; old items are ignored and most sources post a few times an hour | test with `NEWS_MANUAL=1` |
 | `-` in the report for long horizons | the run stopped before those horizons were reached | run longer |
 

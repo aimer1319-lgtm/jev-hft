@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { config, envNum } from './config.ts';
 import { bps, independentCount, mean, num, spearman, summarize, tStat } from './lib/stats.ts';
 import type { NewsRecord } from './news/engine.ts';
+import { entryOk as entryOkAt, tradableMove } from './news/moves.ts';
 
 const files = process.argv.slice(2);
 if (files.length === 0) throw new Error('usage: npm run analyze:news -- <news decisions.jsonl> [...]');
@@ -42,13 +43,9 @@ const fmt = (x: number, d = 1) => (Number.isFinite(x) ? x.toFixed(d) : '-');
 const pad = (s: string | number, n: number) => String(s).padStart(n);
 const label = (h: number) => (h < 60 ? `${h}s` : `${h / 60}m`);
 
-// A stock move is only real if there was a usable quote at both ends: when the answer arrived
-// and at the horizon. Records from before exit spreads were recorded are checked at entry only.
-const usable = (spread: unknown) => num(spread) <= maxSpread;
-const entryOk = (r: NewsRecord) => r.assetClass === 'crypto' || (r.session !== 'closed' && usable(r.spreadBps));
-const exitOk = (r: NewsRecord, h: number) => r.assetClass === 'crypto' || r.fwdSpreadBps === undefined || usable(r.fwdSpreadBps[h]);
-// Tradable move: from the answer's arrival.
-const move = (r: NewsRecord, h: number) => (entryOk(r) && exitOk(r, h) ? bps(r.fwdResp[h], r.midResp) : NaN);
+// A stock move is only real if there was a usable quote at both ends (src/news/moves.ts).
+const entryOk = (r: NewsRecord) => entryOkAt(r, maxSpread);
+const move = (r: NewsRecord, h: number) => tradableMove(r, h, maxSpread);
 
 const bySource = new Map<string, number>();
 for (const r of recs) bySource.set(r.item.source, (bySource.get(r.item.source) ?? 0) + 1);
