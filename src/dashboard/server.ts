@@ -13,7 +13,7 @@ import http from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import { dirname, extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { envNum } from '../config.ts';
+import { config, envNum } from '../config.ts';
 import type { DecisionRecord } from '../engine.ts';
 import { log } from '../lib/run.ts';
 import type { NewsRecord } from '../news/engine.ts';
@@ -91,6 +91,13 @@ type Tail = { prefix: string; file?: string; offset: number; partial: string };
 const tails: Record<'live' | 'news', Tail> = { live: { prefix: 'live-', offset: 0, partial: '' }, news: { prefix: 'news-', offset: 0, partial: '' } };
 let scored: DecisionRecord[] = [];
 let scoreDirty = false;
+/**
+ * Finished news about the traded instrument, oldest first, for the filtered profit-and-loss
+ * strategy's "did a recent headline agree" check. A headline stays useful long after the pipeline
+ * that reported it restarts, so this is never cleared the way `scored` is.
+ */
+let newsForPnl: NewsRecord[] = [];
+const NEWS_FOR_PNL_LIMIT = 500;
 
 /**
  * The file of the most recently STARTED run (its start time is in its name). Not the most
@@ -205,10 +212,17 @@ function followRecords() {
     const byItem = Map.groupBy(finished, r => `${r.item.id}|${r.item.recvTs}`);
     for (const recs of byItem.values()) publish({ type: 'news-restored', program: 'news', entry: restoredEntry(recs[0]!.item, recs) });
     for (const rec of finished) publish(newsOutcome(rec, MAX_SPREAD_BPS));
+    const aboutTraded = finished.filter(r => r.symbol === config.product);
+    if (aboutTraded.length > 0) {
+      // Sorted so the strategy's "most recent headline" lookup can stop at the first match: two
+      // model calls can finish a moment out of order, even though they were logged close together.
+      newsForPnl = [...newsForPnl, ...aboutTraded].sort((a, b) => a.tResp - b.tResp).slice(-NEWS_FOR_PNL_LIMIT);
+      scoreDirty = true; // a new headline can change what the filtered strategy would have done
+    }
     if (scoreDirty) {
       scoreDirty = false;
       publish({ type: 'scoreboard', program: 'live', board: scoreboard(scored) });
-      publish({ type: 'pnl', program: 'live', pnl: pnlReport(scored, { feeBps: FEE_BPS, notionalUsd: NOTIONAL_USD }) });
+      publish({ type: 'pnl', program: 'live', pnl: pnlReport(scored, { feeBps: FEE_BPS, notionalUsd: NOTIONAL_USD, product: config.product }, newsForPnl) });
     }
   } catch (error) {
     log(`reading finished records: ${(error as Error).message}`);

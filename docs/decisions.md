@@ -491,3 +491,42 @@ all: treating those as losses would have shown a 7% success rate where the real 
 The zero default is deliberate. Real costs dwarf these moves, so mixing them in hides whether the
 signal is worth anything in the first place. Keeping them separate lets you see the signal first
 and then charge for trading with `FEE_BPS` to find out what is left.
+
+## D49. A second, filtered strategy sits next to the plain one, not in place of it
+
+**Chosen:** the dashboard now runs two trading rules over the same finished decisions and shows
+both: the existing "trade every lean" baseline, and a "filtered" rule that sits a call out unless
+a simple, zero-latency signal agrees and no headline from the last 15 minutes disagrees, and sizes
+what is left by the strength of Jev's lean and TypeSafe's own reported confidence.
+
+**Why:** the point of adding technical and fundamental factors is to find out whether they help,
+which needs a baseline to compare against. Replacing the plain rule with the filtered one would
+have hidden that comparison; showing both, computed from the same decisions at the same time,
+makes the difference visible on the page instead of asking you to trust that filtering works.
+
+**How the filtered rule works, and why:**
+- **Technical confluence:** requires at least one of the four simple rules (order-book imbalance
+  at the best level and at five levels, buying-minus-selling flow, and the five-second price
+  change) to point the same way as Jev. A rule with no opinion (exactly zero) never counts as
+  agreeing. This is deliberately a low bar — one of four, not a majority — because the report
+  already found Jev's calls mostly overlap with what these rules say; the goal here is to catch
+  the calls that agree with *nothing* measurable, not to second-guess every one.
+- **Sizing:** `|P(up) − P(down)| × confidence`, capped at one full-size trade, so a weak or unsure
+  lean is still traded but for less, rather than being kept at the same size as every other call
+  or dropped entirely. Older records and the practice model have no confidence field; those size
+  by the lean alone.
+- **Fundamental:** looks at the most recent finished headline about the traded instrument from the
+  last 15 minutes, using the same relevance-weighted P(bullish) − P(bearish) signal the news
+  pipeline already computes. Agreement adds a fixed, modest boost (25%) rather than an unbounded
+  one; disagreement sits the trade out entirely, on the reasoning that a human trader would not
+  ignore a fresh, opposing headline just because the order book still looked fine a moment ago. No
+  recent headline (the common case — most sources publish only a few times an hour) is neutral,
+  not a penalty.
+- **No lookahead:** a headline only counts if it was already answered (`tResp`) at or before the
+  decision's own snapshot time. Getting this wrong — using a headline before the pipeline could
+  actually have known about it — would make the backtest fictitious, so it is covered by its own
+  test.
+
+The two rules share one `pnl.ts`, split only by which trades they take and how big; the scoring,
+fee handling, and drawing code is identical, so the comparison is never confused by the two paths
+computing "profit" two different ways.

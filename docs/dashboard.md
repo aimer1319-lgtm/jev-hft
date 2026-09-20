@@ -37,6 +37,13 @@ Everything the pipeline is doing, as it does it:
   at all: `FEE_BPS` adds a cost per round trip, which is the honest way to find out whether
   anything survives it. Over short horizons the price is often exactly where it started, and
   those trades are counted separately rather than as losses.
+- **If you had traded selectively:** the same idea, run under a second, more careful rule, right
+  next to the first so the two can be compared. It sits a call out unless a simple, zero-latency
+  signal (order-book imbalance, trade flow, or momentum) points the same way, and sits out if a
+  headline from the last 15 minutes leans the other way. What is left is sized by how strong
+  Jev's lean was and how sure TypeSafe reported being, rather than betting the same amount every
+  time. Fresh, relevant news is often not available (most sources publish only a few times an
+  hour), and when there is none this rule falls back to the technical check alone.
 
 **News** (when `npm run news` is running)
 

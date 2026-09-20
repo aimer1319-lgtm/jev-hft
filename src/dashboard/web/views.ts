@@ -225,37 +225,51 @@ export function renderLatency(state: DashboardState) {
 /** Money with the sign in front, so a loss reads as −$1.20 rather than $-1.20. */
 const usdSigned = (x: number) => `${x > 0 ? '+' : x < 0 ? '\u2212' : ''}$${Math.abs(x).toFixed(2)}`;
 
-/** What following every one of Jev's leans at the chosen horizon would have made. */
-export function renderPnl(pnl: Pnl | null, horizonS: number) {
+/**
+ * What one of the two trading rules would have made at the chosen horizon. `prefix` selects which
+ * card's elements to fill in, so the same code drives both.
+ */
+export function renderPnl(prefix: 'pnl' | 'fpnl', pnl: Pnl | null, horizonS: number) {
+  const id = (suffix: string) => $(`${prefix}-${suffix}`);
   const leg = pnl?.legs.find(l => l.horizonS === horizonS);
-  const total = $('pnl-money');
-  setText($('pnl-sub'), pnl && pnl.n > 0 ? `${f.int(pnl.n)} finished decisions \u00b7 held ${horizonS} s each` : '');
+  const total = id('money');
+  setText(id('sub'), pnl && pnl.n > 0 ? `${f.int(pnl.n)} finished decisions \u00b7 held ${horizonS} s each` : '');
   if (!pnl || !leg || leg.trades === 0) {
     total.className = 'pnl-money';
     setText(total, '\u2014');
-    setText($('pnl-bps'), '\u00a0');
-    setText($('pnl-stake'), '');
-    for (const id of ['pnl-trades', 'pnl-win', 'pnl-flat', 'pnl-avg', 'pnl-best', 'pnl-worst', 'pnl-dd']) setText($(id), '\u2014');
-    setHtml($('pnl-note'), `A trade only counts once the price ${horizonS} seconds after the answer is known, so this fills in about a minute behind the decisions themselves.`);
+    setText(id('bps'), '\u00a0');
+    setText(id('stake'), '');
+    for (const suffix of ['trades', 'win', 'flat', 'avg', 'best', 'worst', 'dd']) setText(id(suffix), '\u2014');
+    setHtml(
+      id('note'),
+      prefix === 'pnl'
+        ? `A trade only counts once the price ${horizonS} seconds after the answer is known, so this fills in about a minute behind the decisions themselves.`
+        : `Fills in the same way, once there have been enough calls that also clear its filters below.`,
+    );
     return;
   }
 
   const dollars = (leg.totalBps / 10_000) * pnl.notionalUsd;
   total.className = `pnl-money ${leg.totalBps > 0 ? 'up' : leg.totalBps < 0 ? 'down' : ''}`;
   setText(total, usdSigned(dollars));
-  setText($('pnl-bps'), `${f.bp(leg.totalBps)} in all`);
-  setHtml($('pnl-stake'), `$${f.int(pnl.notionalUsd)} a trade<br>${pnl.feeBps === 0 ? 'no trading costs' : `${f.fixed(pnl.feeBps, 1)} bp cost a trade`}`);
+  setText(id('bps'), `${f.bp(leg.totalBps)} in all`);
+  setHtml(id('stake'), `$${f.int(pnl.notionalUsd)} a trade${prefix === 'fpnl' ? ' at full size' : ''}<br>${pnl.feeBps === 0 ? 'no trading costs' : `${f.fixed(pnl.feeBps, 1)} bp cost a trade`}`);
   const decided = leg.wins + leg.losses;
-  setText($('pnl-trades'), f.int(leg.trades));
-  setText($('pnl-win'), decided > 0 ? f.pct(leg.wins / decided) : '\u2014');
-  setText($('pnl-flat'), f.int(leg.trades - decided));
-  setText($('pnl-avg'), f.bp(leg.avgBps, 2));
-  setText($('pnl-best'), f.bp(leg.bestBps));
-  setText($('pnl-worst'), f.bp(leg.worstBps));
-  setText($('pnl-dd'), f.bp(-leg.maxDrawdownBps));
+  setText(id('trades'), f.int(leg.trades));
+  setText(id('win'), decided > 0 ? f.pct(leg.wins / decided) : '\u2014');
+  setText(id('flat'), f.int(leg.trades - decided));
+  setText(id('avg'), f.bp(leg.avgBps, 2));
+  setText(id('best'), f.bp(leg.bestBps));
+  setText(id('worst'), f.bp(leg.worstBps));
+  setText(id('dd'), f.bp(-leg.maxDrawdownBps));
+
+  const rule =
+    prefix === 'pnl'
+      ? `Every answer with a lean is traded, all the same size: take Jev's side at the mid price the moment the answer arrived, close ${horizonS} seconds later. Answers with no lean sit out.`
+      : `The same rule, refined: it also sits out unless a simple, zero-latency rule (order-book imbalance, trade flow, or momentum) points the same way, and sits out if a headline from the last 15 minutes leans the other way. What is left is sized by how strong Jev's lean was and how sure TypeSafe reported being, rather than betting the same amount every time.`;
   setHtml(
-    $('pnl-note'),
-    `Every answer with a lean is traded, all the same size: take Jev's side at the mid price the moment the answer arrived, close ${horizonS} seconds later. Answers with no lean sit out. Trades overlap, so this assumes you could hold several at once.<br>
+    id('note'),
+    `${rule} Trades overlap, so this assumes you could hold several at once.<br>
      \u201cWent your way\u201d is a share of the ${f.int(decided)} trades where the price actually moved: over ${horizonS} s it often does not move at all, and those made nothing either way.<br>
      Prices are mid-to-mid${pnl.feeBps === 0 ? ', with nothing charged for trading, so the gap between the buying and the selling price is not counted \u2014 set FEE_BPS to charge for it' : `, with ${f.fixed(pnl.feeBps, 1)} bp charged per round trip`}.`,
   );

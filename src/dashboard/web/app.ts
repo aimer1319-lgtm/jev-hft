@@ -15,6 +15,7 @@ const dirty = new Set<string>();
 const chart = new PriceChart(view.$<HTMLCanvasElement>('chart'));
 const latency = new LatencyChart(view.$<HTMLCanvasElement>('latency-chart'));
 const equity = new EquityChart(view.$<HTMLCanvasElement>('equity-chart'));
+const fequity = new EquityChart(view.$<HTMLCanvasElement>('fequity-chart'));
 /** The horizon the chart marks and the profit and loss is worked out for. */
 let horizonS = 10;
 view.buildHorizons();
@@ -103,7 +104,7 @@ function frame() {
   if (dirty.size > 0) {
     // This side stays up after the pipeline stops: the scoreboard and the profit and loss come
     // from the files it left behind, and a finished run is exactly when you want to read them.
-    const live = state.live.pulse !== null || (state.pnl?.n ?? 0) > 0;
+    const live = state.live.pulse !== null || (state.pnl?.baseline.n ?? 0) > 0;
     const news = state.news.pulse !== null || state.news.items.length > 0;
     view.$('live-empty').hidden = live;
     view.$('live-body').hidden = !live;
@@ -126,8 +127,10 @@ function frame() {
       }
       if (dirty.has('score')) view.renderScoreboard(state.scoreboard);
       if (dirty.has('pnl')) {
-        view.renderPnl(state.pnl, horizonS);
-        equity.setData(state.pnl?.legs.find(l => l.horizonS === horizonS)?.curve ?? []);
+        view.renderPnl('pnl', state.pnl?.baseline ?? null, horizonS);
+        view.renderPnl('fpnl', state.pnl?.filtered ?? null, horizonS);
+        equity.setData(state.pnl?.baseline.legs.find(l => l.horizonS === horizonS)?.curve ?? []);
+        fequity.setData(state.pnl?.filtered.legs.find(l => l.horizonS === horizonS)?.curve ?? []);
       }
     }
     if (news) {

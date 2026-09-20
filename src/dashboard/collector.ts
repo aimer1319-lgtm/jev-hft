@@ -47,12 +47,14 @@ export type ScoreboardUpdate = { type: 'scoreboard'; program: 'live'; board: Sco
 /** What following Jev's leans at one horizon would have made: basis points on a fixed stake per trade. */
 export type PnlLeg = {
   horizonS: number;
+  /** Decisions that were actually traded (a strategy can sit some out). */
   trades: number;
   /** Trades that finished above and below water, after cost. Any left over neither made nor lost anything. */
   wins: number;
   losses: number;
   totalBps: number;
   avgBps: number | null;
+  /** The best and worst single call, at full size, so these describe the call rather than the stake. */
   bestBps: number | null;
   worstBps: number | null;
   /** The largest fall from a high point of the running total. */
@@ -69,7 +71,13 @@ export type Pnl = {
   notionalUsd: number;
   legs: PnlLeg[];
 };
-export type PnlUpdate = { type: 'pnl'; program: 'live'; pnl: Pnl };
+/**
+ * `baseline`: every lean is traded, all the same size. `filtered`: the same lean, but only when a
+ * simple zero-latency rule agrees and no very recent headline disagrees, sized by how strong and
+ * how sure the call was rather than betting the same amount every time (docs/dashboard.md).
+ */
+export type PnlSet = { baseline: Pnl; filtered: Pnl };
+export type PnlUpdate = { type: 'pnl'; program: 'live'; pnl: PnlSet };
 
 /** A headline from before the dashboard started, restored from what the pipeline saved to disk. */
 export type NewsRestored = { type: 'news-restored'; program: 'news'; entry: NewsEntry };
@@ -109,7 +117,7 @@ export type DashboardSnapshot = {
   live: { lastRx: number | null; pulse: LivePulse | null; ticks: Tick[]; decisions: Decision[] };
   news: { lastRx: number | null; pulse: NewsPulse | null; ticks: Tick[]; items: NewsEntry[] };
   scoreboard: Scoreboard | null;
-  pnl: Pnl | null;
+  pnl: PnlSet | null;
 };
 
 /** Thirty minutes of one-a-second history, and a few hundred news items. */
@@ -124,7 +132,7 @@ export class DashboardState {
   live: DashboardSnapshot['live'] = { lastRx: null, pulse: null, ticks: [], decisions: [] };
   news: DashboardSnapshot['news'] = { lastRx: null, pulse: null, ticks: [], items: [] };
   scoreboard: Scoreboard | null = null;
-  pnl: Pnl | null = null;
+  pnl: PnlSet | null = null;
 
   static from(snapshot: DashboardSnapshot): DashboardState {
     const s = new DashboardState();
