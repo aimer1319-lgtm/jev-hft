@@ -47,6 +47,14 @@ Everything the pipeline is doing, as it does it:
   way, how big, whether it's new. Open one to see exactly what Jev was shown. Thirty minutes later
   the price moves appear next to it.
 
+The page is built for a desktop screen. News sits in a sidebar of roughly fixed width and the
+market-data cards take everything else, laying themselves out in one, two or three columns
+depending on how much room they have. That is measured against the width of their own column
+rather than the window's, so the layout is right whatever else is on screen. On a 2560-wide
+monitor the whole dashboard is three columns and very nearly one screenful; narrow the window
+and the columns fold back down on their own, which is why there is no desktop/mobile switch to
+remember.
+
 Either side shows how to start its pipeline when that pipeline isn't running. A light in the top
 bar shows whether each pipeline is alive (it should be heard from every second), and the button
 at the top right switches between dark and light.

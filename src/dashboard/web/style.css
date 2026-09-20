@@ -266,24 +266,52 @@ pre,
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.42fr) minmax(0, 1fr);
+  /* News is a sidebar of roughly fixed width; every extra pixel of screen goes to the market
+     data side, which has far more to show. */
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 440px);
   gap: 22px;
   padding: 22px 28px 12px;
-  max-width: 1760px;
+  max-width: 2560px;
   margin: 0 auto;
+}
+/* Cards lay themselves out against the width of their own column, not the window's, so the
+   market-data side gains a column whenever it has the room for one. */
+.column {
+  container-type: inline-size;
 }
 .stack {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
-.row-2 {
+.cards {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
+  align-items: start;
 }
-.row-2.wide-right {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+.cards > .full {
+  grid-column: 1 / -1;
+}
+@container (min-width: 700px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* Two columns of the three, so the price chart keeps a readable shape instead of stretching
+     into a letterbox, and the card after it fills the gap. */
+  .cards > .wide {
+    grid-column: span 2;
+  }
+}
+@container (min-width: 1400px) {
+  .cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  /* Only worth widening where there are three columns: at two it would sit alone on its own
+     row and leave a bigger hole than the one it fills. */
+  .cards > .wide-3up {
+    grid-column: span 2;
+  }
 }
 @media (max-width: 1180px) {
   .grid {
@@ -303,10 +331,6 @@ pre,
     margin-left: 0;
     width: 100%;
     justify-content: space-between;
-  }
-  .row-2,
-  .row-2.wide-right {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -476,7 +500,7 @@ pre,
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   gap: 14px 22px;
   margin: 0;
 }
@@ -555,6 +579,11 @@ pre,
   position: relative;
   height: 340px;
 }
+@container (min-width: 1400px) {
+  .chart-wrap {
+    height: 400px;
+  }
+}
 .chart-wrap canvas,
 .spark-wrap canvas {
   position: absolute;
@@ -573,10 +602,6 @@ pre,
 
 [data-running='false'] .live-only {
   display: none;
-}
-[data-running='false'] .row-2,
-[data-running='false'] .row-2.wide-right {
-  grid-template-columns: minmax(0, 1fr);
 }
 .stopped-note {
   margin: 0;
@@ -1305,7 +1330,7 @@ pre,
 
 .foot {
   padding: 8px 28px 28px;
-  max-width: 1760px;
+  max-width: 2560px;
   margin: 0 auto;
   color: var(--faint);
   font-size: 11.5px;

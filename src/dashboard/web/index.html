@@ -62,10 +62,10 @@
           <p class="hint">Free to try with the practice model: <code>JEV_PROVIDER=mock npm run live</code></p>
         </div>
 
-        <div class="stack" id="live-body" hidden>
-          <p class="stopped-note" id="live-stopped" hidden>The market-data pipeline isn't running. This is what its last run left behind.</p>
+        <div class="cards" id="live-body" hidden>
+          <p class="stopped-note full" id="live-stopped" hidden>The market-data pipeline isn't running. This is what its last run left behind.</p>
 
-          <article class="card hero live-only">
+          <article class="card hero live-only full">
             <div class="hero-main">
               <div class="hero-label">
                 <span id="product">BTC-USD</span>
@@ -85,7 +85,7 @@
             </dl>
           </article>
 
-          <article class="card chart-card live-only">
+          <article class="card chart-card live-only wide">
             <header>
               <h2>Price and Jev's calls</h2>
               <div class="controls">
@@ -158,51 +158,49 @@
             </div>
           </article>
 
-          <div class="row-2 live-only">
-            <article class="card">
-              <header><h2>What Jev was shown</h2></header>
-              <pre class="state-text" id="state-text">—</pre>
-            </article>
-            <article class="card">
-              <header><h2>Order book and trades</h2></header>
-              <div class="gauges" id="gauges"></div>
-            </article>
-          </div>
+          <article class="card live-only">
+            <header><h2>What Jev was shown</h2></header>
+            <pre class="state-text" id="state-text">—</pre>
+          </article>
 
-          <div class="row-2 wide-right">
-            <article class="card live-only">
-              <header>
-                <h2>Response time</h2>
-                <span class="muted" id="lat-count"></span>
-              </header>
-              <div class="spark-wrap"><canvas id="latency-chart"></canvas></div>
-              <dl class="stats compact">
-                <div><dt>typical</dt><dd id="lat-p50">—</dd></div>
-                <div title="9 in 10 answers are faster than this"><dt>slow</dt><dd id="lat-p90">—</dd></div>
-                <div><dt>refused</dt><dd id="lat-429">0</dd></div>
-                <div><dt>timed out</dt><dd id="lat-timeouts">0</dd></div>
-                <div><dt>failed</dt><dd id="lat-errors">0</dd></div>
-              </dl>
-              <div class="budget">
-                <h3>From something happening to an answer</h3>
-                <ul>
-                  <li><span>Coinbase to us</span><b id="bud-lag">—</b></li>
-                  <li><span>handling the update</span><b id="bud-handle">—</b></li>
-                  <li><span>Jev, there and back</span><b id="bud-jev">—</b></li>
-                  <li class="sub"><span>of which TypeSafe</span><b id="bud-model">—</b></li>
-                  <li class="sub"><span>of which network + gateway</span><b id="bud-route">—</b></li>
-                  <li class="total"><span>in all, typically</span><b id="bud-total">—</b></li>
-                </ul>
-              </div>
-            </article>
-            <article class="card">
-              <header>
-                <h2>Jev against simple rules</h2>
-                <span class="muted" id="score-n"></span>
-              </header>
-              <div id="scoreboard"></div>
-            </article>
-          </div>
+          <article class="card live-only">
+            <header><h2>Order book and trades</h2></header>
+            <div class="gauges" id="gauges"></div>
+          </article>
+
+          <article class="card live-only">
+            <header>
+              <h2>Response time</h2>
+              <span class="muted" id="lat-count"></span>
+            </header>
+            <div class="spark-wrap"><canvas id="latency-chart"></canvas></div>
+            <dl class="stats compact">
+              <div><dt>typical</dt><dd id="lat-p50">—</dd></div>
+              <div title="9 in 10 answers are faster than this"><dt>slow</dt><dd id="lat-p90">—</dd></div>
+              <div><dt>refused</dt><dd id="lat-429">0</dd></div>
+              <div><dt>timed out</dt><dd id="lat-timeouts">0</dd></div>
+              <div><dt>failed</dt><dd id="lat-errors">0</dd></div>
+            </dl>
+            <div class="budget">
+              <h3>From something happening to an answer</h3>
+              <ul>
+                <li><span>Coinbase to us</span><b id="bud-lag">—</b></li>
+                <li><span>handling the update</span><b id="bud-handle">—</b></li>
+                <li><span>Jev, there and back</span><b id="bud-jev">—</b></li>
+                <li class="sub"><span>of which TypeSafe</span><b id="bud-model">—</b></li>
+                <li class="sub"><span>of which network + gateway</span><b id="bud-route">—</b></li>
+                <li class="total"><span>in all, typically</span><b id="bud-total">—</b></li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="card wide-3up">
+            <header>
+              <h2>Jev against simple rules</h2>
+              <span class="muted" id="score-n"></span>
+            </header>
+            <div id="scoreboard"></div>
+          </article>
         </div>
       </section>
 
