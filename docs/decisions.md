@@ -494,6 +494,9 @@ and then charge for trading with `FEE_BPS` to find out what is left.
 
 ## D49. A second, filtered strategy sits next to the plain one, not in place of it
 
+*Its gate and its sizing were replaced by D51 a day later, once there was enough data to test
+them. The reasoning for showing two rules side by side, and the headline check, still stand.*
+
 **Chosen:** the dashboard now runs two trading rules over the same finished decisions and shows
 both: the existing "trade every lean" baseline, and a "filtered" rule that sits a call out unless
 a simple, zero-latency signal agrees and no headline from the last 15 minutes disagrees, and sizes
@@ -530,3 +533,71 @@ makes the difference visible on the page instead of asking you to trust that fil
 The two rules share one `pnl.ts`, split only by which trades they take and how big; the scoring,
 fee handling, and drawing code is identical, so the comparison is never confused by the two paths
 computing "profit" two different ways.
+
+## D50. Jev's lean is read against what it usually says, not at face value
+
+**Chosen:** the pipeline keeps Jev's answers from the last 15 minutes and reads each new one
+against the middle of them. The result (`signals.jevc_*`) is what gets drawn, scored, and traded.
+The plain answer (`signals.jev_*`) and the usual lean it was read against (`lean`) are saved too.
+The engine works it out the moment an answer arrives, from earlier answers only.
+
+**Why:** over a nine-hour run the price rose exactly as often as it fell, yet Jev leaned "down"
+in more than 80% of its 2- and 10-second answers. Things that are one-sided all day (three sell
+trades for every buy, a slightly deeper ask side, a slow drift) read as bearish every second, so
+"slightly down" is Jev's neutral. At face value four trades in five were shorts, and an answer
+more bullish than usual was still traded short. Read against its usual lean, Jev pointed the
+right way 66% of the time at 2 seconds instead of 59%, and made about twice as much per trade.
+
+**Why this, and not something fitted to the results:**
+- It never looks at prices. It uses only Jev's own earlier answers, so there is nothing about
+  one day's market for it to memorise.
+- The one number in it doesn't matter. Windows from 2 to 60 minutes, middle or average, all
+  scored within about two points of each other, so 15 minutes was picked from the middle and
+  left alone. It is deliberately not a setting.
+- It was chosen on the first six hours of the run and checked once on the last three, which it
+  had never seen. Every figure quoted here is from those three hours.
+- The report prints the same checks for any run, and the dashboard keeps the face-value result
+  on screen as a yardstick, so it goes on being tested rather than trusted.
+
+**What it costs:** a run makes no calls for its first minute, while it learns the usual lean. And
+one result got worse on purpose. At 60 seconds the face-value rule looked profitable, but only
+because it was short nearly all day while the price drifted down; on the flat hours that followed
+it lost. Taking the lean out removes that luck along with the bias, and shows the 60-second answer
+for what it is: no better than a coin.
+
+**Alternatives passed over:** changing what Jev is shown so the lean never forms (it needs paid
+replays to test, and trying several wordings and keeping the best is an easy way to fool
+yourself; the correction above adapts to whatever the wording does anyway). Blending Jev with the
+order book into one signal, and pooling its three answers (neither beat the simpler pieces).
+Fitting weights or a calibration curve to the outcomes (that is exactly what would overfit one
+day).
+
+## D51. The selective rule asks the order book to agree, and stakes by the strength of the lean
+
+**Chosen:** the dashboard's second rule now trades the corrected lean only when the best level of
+the order book points the same way, and stakes in proportion to how strong the lean is next to
+Jev's ordinary one, up to twice the normal stake. The headline check from D49 is unchanged. This
+replaces D49's "any one of four rules agrees" gate and its sizing by lean times confidence.
+
+**Why the gate changed:** "any one of four" let through more than nine calls in ten, so it
+filtered almost nothing. Best-level book imbalance is the one simple rule that beats Jev at every
+horizon, and when it and Jev disagreed, Jev was right only about 45% of the time. A dissent that
+is wrong more often than right isn't worth acting on. On the unseen three hours the rule was
+right 71% of the time at 2 seconds and 66% at 10, against 62% and 61% for the rule it replaces.
+
+**Why the sizing changed:** TypeSafe's confidence turned out to be the probability of whichever
+answer Jev picked (the two rank identically, 0.999). At short horizons that answer is usually
+"flat", so D49's rule was staking most when Jev was surest that nothing would happen. The
+strength of the corrected lean is a real guide: the weakest fifth of leans was right 55% of the
+time and the strongest 74%, rising steadily between. Staking by it made about a fifth more per
+unit staked than flat stakes, and it made no difference whether the cap was two or three times
+the normal stake, so the more cautious one was kept.
+
+**Why stakes are measured against Jev's ordinary lean:** so an ordinary lean is one normal stake
+and the two cards put down about the same amount in all. D49's rule staked about a quarter as
+much per trade, and its smaller total was read as the rule doing worse when it was only betting
+less. "Average per stake" is now worked out per unit staked for the same reason.
+
+**What to keep in mind:** most of this rule's accuracy is the order book's. The book alone is
+right about two times in three at 2 seconds; Jev's agreement adds a few points. That is an honest
+measure of what Jev contributes on market data, and it matches everything else found so far.

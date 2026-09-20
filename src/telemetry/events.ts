@@ -97,8 +97,10 @@ export type Answer = {
   costUsd: number | null;
   probabilities: Record<string, Probabilities>;
   confidence: Record<string, number> | null;
-  /** Jev's signal per horizon and the simple rules, as recorded. */
-  signals: Record<string, number>;
+  /** What Jev's lean had usually been before this answer, per question (null inside: not known yet). Older pipelines send none. */
+  lean?: Record<string, { usual: number | null; typical: number | null }> | null;
+  /** Jev's signal per horizon (as answered, and with its usual lean taken out) and the simple rules, as recorded. */
+  signals: Record<string, number | null>;
   midResp: number | null;
 };
 

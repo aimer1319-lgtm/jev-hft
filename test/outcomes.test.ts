@@ -6,14 +6,18 @@ import type { NewsRecord } from '../src/news/engine.ts';
 
 const T0 = 1_800_000_000_000;
 
-/** A finished decision: the price moved `moveBp` over every horizon; Jev and one rule each said something. */
-function decision(i: number, moveBp: number, jev: number, rule: number): DecisionRecord {
+/**
+ * A finished decision: the price moved `moveBp` over every horizon; Jev and one rule each said
+ * something. `usual` is what Jev had usually been saying before it (0: its answer stands as it is).
+ */
+function decision(i: number, moveBp: number, jev: number, rule: number, usual = 0): DecisionRecord {
   const later = 100 * (1 + moveBp / 1e4);
   const fwd = { 1: later, 2: later, 5: later, 10: later, 30: later, 60: later };
+  const c = jev - usual;
   return {
     v: 2, mode: 'live', provider: 'test', tState: T0 + i * 1000, exchLagMs: 90, buildMs: 0.3, modelMs: 260, tResp: T0 + i * 1000 + 260, state: '',
     probabilities: {} as DecisionRecord['probabilities'],
-    signals: { jev_2s: jev, jev_10s: jev, jev_60s: jev, obi1: rule, obi5: 0, flow5: 0, mom5: 0 },
+    signals: { jev_2s: jev, jev_10s: jev, jev_60s: jev, jevc_2s: c, jevc_10s: c, jevc_60s: c, obi1: rule, obi5: 0, flow5: 0, mom5: 0 },
     midState: 100, midResp: 100, fwdState: fwd, fwdResp: fwd,
   };
 }
@@ -42,6 +46,15 @@ test('the scoreboard counts who pointed the right way, and only where there was 
   assert.ok(jev.ic! > 0.5 && rule.ic! < -0.5);
   const silent = board.rows.find(r => r.key === 'mom5')!.cells[1]!;
   assert.deepEqual([silent.hit, silent.judged], [null, 0], 'a rule that never leaned has no score');
+});
+
+test('Jev is scored twice: read against its usual lean, which is what is acted on, and at face value', () => {
+  // Jev always answers "down", a little less so before a rise. At face value that is a short every time.
+  const recs = Array.from({ length: 40 }, (_, i) => decision(i, i % 2 ? 3 : -3, i % 2 ? -0.2 : -0.6, 0, -0.4));
+  const board = scoreboard(recs);
+  assert.deepEqual(board.rows.slice(0, 2).map(r => [r.key, r.isJev]), [['jevc', true], ['jev', false]]);
+  assert.equal(board.rows[0]!.cells[1]!.hit, 1, 'against its usual -0.4 it called every move');
+  assert.equal(board.rows[1]!.cells[1]!.hit, 0.5, 'taken as answered it was short every time, and right half the time');
 });
 
 test('a Jev that only repeats a rule has nothing left once the rule is accounted for', () => {

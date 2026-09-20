@@ -35,10 +35,14 @@ a separate program that the pipeline never waits for, so watching costs the pipe
   that is the route, not the model; going straight to TypeSafe would roughly halve it.
 - **The market-data part has a cost problem:** over a few seconds Bitcoin barely moves, so even
   perfect predictions would earn less than trading fees. That's why the news part exists.
-- **On market data, Jev doesn't beat a one-line rule:** on 31 minutes of recorded data its calls
-  had a small real relationship with the next move, but plain order-book imbalance did about twice
-  as well for free, and Jev added nothing beyond it. One quiet evening isn't the last word, but it
-  points the same way as the cost problem.
+- **On market data, Jev doesn't beat a one-line rule:** over a nine-hour live run its calls had a
+  real relationship with the next move, but plain order-book imbalance did better for free, and
+  Jev added almost nothing beyond it. That points the same way as the cost problem.
+- **Jev leans "down" nearly all the time, and the pipeline corrects for it:** the price rose as
+  often as it fell, yet more than 80% of Jev's short-term answers leaned down. Read against what
+  it has usually been saying, it pointed the right way 66% of the time at 2 seconds instead of
+  59%, on hours that played no part in choosing the fix
+  ([docs/model.md](docs/model.md#reading-jevs-lean-against-its-usual-one)).
 - **Jev understands the news questions:** on test headlines it called a surprise rate cut
   bullish, an exchange halting withdrawals bearish, a bakery story irrelevant, and a reworded
   repeat "not new". Whether that makes money needs real data collected over time.

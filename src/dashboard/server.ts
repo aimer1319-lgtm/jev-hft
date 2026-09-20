@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { config, envNum } from '../config.ts';
 import type { DecisionRecord } from '../engine.ts';
 import { log } from '../lib/run.ts';
+import { fillLeans, LeanBook } from '../model/lean.ts';
 import type { NewsRecord } from '../news/engine.ts';
 import { DEFAULT_TELEMETRY_PORT } from '../telemetry/sender.ts';
 import type { TelemetryEvent } from '../telemetry/events.ts';
@@ -92,7 +93,13 @@ const tails: Record<'live' | 'news', Tail> = { live: { prefix: 'live-', offset: 
 let scored: DecisionRecord[] = [];
 let scoreDirty = false;
 /**
- * Finished news about the traded instrument, oldest first, for the filtered profit-and-loss
+ * Records saved by a pipeline from before it read Jev's lean against its usual one carry no such
+ * reading. They are given one here, worked out exactly as a live run would have, so an older run
+ * can still be scored the new way. A record that has its own is left alone.
+ */
+let leans = new LeanBook();
+/**
+ * Finished news about the traded instrument, oldest first, for the selective profit-and-loss
  * strategy's "did a recent headline agree" check. A headline stays useful long after the pipeline
  * that reported it restarts, so this is never cleared the way `scored` is.
  */
@@ -199,9 +206,10 @@ function followRecords() {
     // until then the last run's numbers would sit there looking like this one's.
     if (tails.live.file !== before) {
       scored = [];
+      leans = new LeanBook();
       scoreDirty = true;
     }
-    for (const rec of fresh) {
+    for (const rec of fillLeans(fresh, leans)) {
       publish(liveOutcome(rec));
       scored.push(rec);
       scoreDirty = true;
@@ -217,7 +225,7 @@ function followRecords() {
       // Sorted so the strategy's "most recent headline" lookup can stop at the first match: two
       // model calls can finish a moment out of order, even though they were logged close together.
       newsForPnl = [...newsForPnl, ...aboutTraded].sort((a, b) => a.tResp - b.tResp).slice(-NEWS_FOR_PNL_LIMIT);
-      scoreDirty = true; // a new headline can change what the filtered strategy would have done
+      scoreDirty = true; // a new headline can change what the selective rule would have done
     }
     if (scoreDirty) {
       scoreDirty = false;

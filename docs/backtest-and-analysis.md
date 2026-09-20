@@ -61,7 +61,7 @@ are never kept. `BT_CACHE=0` turns the cache off; deleting the file empties it.
 ## The market-data report (`npm run analyze -- <files>`)
 
 It starts with how much time the decisions cover, how many tokens a decision used, and what the
-run cost. Then it prints four sections.
+run cost. Then it prints five sections.
 
 **1. Where the time went:** how old the data was, how long the text took, how long Jev took (and,
 for live runs, how much of that was TypeSafe itself against the network and gateway), and the
@@ -92,6 +92,11 @@ Jev is scored from when its answer arrived (what you could actually trade). It's
 "@state", scored from the snapshot, to see whether it saw something real even if too late to
 use. The simple rules are scored from the snapshot, since they take no time to compute.
 
+`jevc_*` is the same answer with Jev's usual lean taken out
+([model.md](model.md#reading-jevs-lean-against-its-usual-one)). Its `IC` is nearly the same as
+the plain answer's, because shifting every answer by about the same amount doesn't change how
+they rank. Its `hit%` is higher, because which way an answer points depends on where zero is.
+
 **About `ind` and `t`.** Two decisions a second apart, each looking 60 seconds ahead, are looking
 at almost the same minute. They're one piece of evidence, not two. So the report walks through the
 decisions in time order and counts one only if it comes at least a full horizon (and at least 5
@@ -112,7 +117,29 @@ signal that only echoes the rules scores about zero on this line however well it
 This is the line that says whether Jev is adding judgment. On our 31-minute recording Jev scored
 0.10 to 0.17 on its own at 2 and 10 seconds, and between −0.14 and 0 on this line.
 
-**4. Late arrival and calibration:** how much the price moved while Jev was thinking, and whether
+**4. Jev's lean:** for each question, how one-sided Jev's answers were next to how one-sided the
+market really was, and what reading them against its usual lean was worth. Four lines each:
+
+- how often the price rose, against how often Jev leaned up (on a nine-hour run: 50% against 13%);
+- how often Jev pointed the right way as answered, and with its usual lean taken out, with the
+  best level of the order book alongside for comparison;
+- the same split into fifths by how strong the corrected lean was, weakest first. This should
+  rise from left to right. If it stops rising, a stronger lean has stopped meaning more, and
+  staking by it no longer makes sense;
+- how often Jev and the book agree, how often they are right when they do, and how often Jev is
+  right when they don't. The dashboard's selective rule sits out the disagreements because this
+  last number has been below half.
+
+**Why it's in the report:** these are the findings the pipeline's corrections rest on, and they
+came from one day. Printing them for every run means they get checked again on other days
+instead of being trusted. Files from before the correction existed are read the same way, so old
+runs can be compared with new ones.
+
+A backtest needs its snapshots close together for this: the usual lean is only known once there
+are 60 answers within 15 minutes. With `STEP_S` above 15, or a small `BT_MAX` spread over a long
+recording, the section says there were too few.
+
+**5. Late arrival and calibration:** how much the price moved while Jev was thinking, and whether
 Jev's probabilities match reality (when it says 70%, does it happen about 70% of the time?). Each
 decision is judged against the "flat" threshold it was actually asked with, since those now
 change with the market ([model.md](model.md#the-market-data-questions)). Below each line is Jev's
@@ -165,6 +192,13 @@ once turned every unfinished horizon into a fake −10,000 bp crash.
   should. That shows the reports aren't accidentally peeking at future prices. Run this check
   again after changing anything in the reports or the backtester:
   `JEV_PROVIDER=mock npm run backtest -- <file>`, then `npm run analyze` on the result.
+- The correction for Jev's usual lean got the same treatment, on a much larger scale. In a
+  nine-hour run (30,312 decisions) every one of Jev's answers was replaced with a random one
+  that leaned "down" as heavily as the real ones do, then put through the same code. The
+  corrected lean scored 0.00 and pointed the right way exactly 50% of the time, with no sign of
+  stronger leans doing better. So the correction can't turn nothing into something. It also
+  took away the little the random answers had: leaning down on a day the price drifted down had
+  made them "right" 51 to 52% of the time, and that luck went with the lean.
 - The simple rules showed small positive scores at 1 to 5 seconds, which is what's normally seen
   for these rules (the samples were too short to be conclusive).
 - Unfinished horizons show as `-`, never as zero.

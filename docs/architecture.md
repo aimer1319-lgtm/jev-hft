@@ -47,6 +47,7 @@ nothing downstream changes.
 | Prices | `src/market/prices.ts`, `quotes.ts` | Bitcoin's state and stock quotes | "what did this cost at time t, and how wide was the quote?" | the same question works for Bitcoin and any stock |
 | Encoder | `src/market/encode.ts` | measurements | the short text Jev reads | same input always gives the same text |
 | Model access | `src/model/jev.ts` | text + questions | typed answers, plus the call's cost and timing | one attempt only, no automatic retries; reports "too many requests" distinctly; keeps its connection open |
+| Reading the answer | `src/model/lean.ts` | Jev's answer, and its answers over the last 15 minutes | the lean with Jev's usual one taken out, and how strong it is | looks only at earlier answers, never at prices or at the answer itself |
 | News sources | `src/news/rss.ts`, `alpaca.ts`, `edgar.ts`, `x.ts`, `manual.ts` | a publisher's feed or API | standard news items | never reports an item twice, never reports what was already there at startup, polite to the publisher |
 | Engines | `src/engine.ts`, `src/news/engine.ts` | events or news items | records | decide when (and whether) to ask Jev, handle rate limits and failures, wait for the later prices, write records |
 | Runners | `src/live.ts`, `src/news-live.ts`, ... | settings | files and logs | connect the blocks, start and stop cleanly |

@@ -57,8 +57,9 @@ about a quarter of a second old when it arrived.
 | `inputTokens`, `costUsd` | how much text was sent and what the call cost at list price |
 | `state` | exactly the text Jev saw, so any decision can be looked at again later |
 | `flatBps` | the move that counted as "flat" in each of this decision's questions |
-| `probabilities`, `confidence` | Jev's raw answers, and how sure TypeSafe says it was of each |
-| `signals` | Jev's signal for each horizon, plus four simple rules computed from the same snapshot (book imbalance at 1 and 5 levels, 5-second order flow, 5-second momentum) |
+| `probabilities`, `confidence` | Jev's raw answers, and how sure TypeSafe says it was of each (the probability of the answer it picked) |
+| `lean` | what Jev's lean had usually been over the 15 minutes before this answer, per question, and how far its leans typically strayed from that; unknown for the first minute of a run |
+| `signals` | Jev's signal for each horizon as answered (`jev_*`), the same with its usual lean taken out (`jevc_*`, which is what gets acted on), plus four simple rules computed from the same snapshot (book imbalance at 1 and 5 levels, 5-second order flow, 5-second momentum) |
 | `midState`, `midResp` | the price at the snapshot and when the answer arrived |
 | `fwdState`, `fwdResp` | the prices at each horizon, measured from the snapshot and from the answer |
 
@@ -71,6 +72,12 @@ about a quarter of a second old when it arrived.
   ([architecture.md](architecture.md#3-every-decision-is-judged-twice)).
 - **Why record the thresholds?** They change with the market, and the report has to judge each
   answer against the question that was actually asked.
+- **Why record both the answer and the corrected lean?** Jev leans "down" most of the time
+  whatever the market does next, so its answer is read against what it has usually been saying
+  ([model.md](model.md#reading-jevs-lean-against-its-usual-one)). Keeping both, and the usual lean
+  itself, means the correction can always be checked against the plain answer it started from.
+  The engine works it out when the answer arrives, from earlier answers only, so a record holds
+  exactly the call a live run could have made at that moment.
 
 If the run stops before a record's 60 seconds are up, the record is still written, with "unknown"
 for the prices that hadn't happened yet. The same goes for any price that falls inside a feed

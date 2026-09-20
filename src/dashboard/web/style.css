@@ -509,6 +509,10 @@ pre,
   gap: 10px 14px;
   margin-top: 14px;
 }
+/* A figure too long for one cell, such as a total and a share together. */
+.stats > .span2 {
+  grid-column: span 2;
+}
 .stats dt {
   color: var(--muted);
   font-size: 11.5px;

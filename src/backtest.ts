@@ -24,6 +24,7 @@ import { encode } from './market/encode.ts';
 import { replayer } from './market/replay.ts';
 import { MarketState, type Features } from './market/state.ts';
 import { closeConnections, createModel, decide, flatThresholds, isTransient, RateLimitedError, type FlatThresholds, type ModelResult } from './model/jev.ts';
+import { fillLeans } from './model/lean.ts';
 
 const file = process.argv[2];
 if (!file) throw new Error('usage: npm run backtest -- <recorded .jsonl[.gz]>');
@@ -150,7 +151,9 @@ await Promise.all(Array.from({ length: concurrency }, worker));
 mkdirSync('data/decisions', { recursive: true });
 const outFile = `data/decisions/backtest-${config.provider}-${fileStamp()}.jsonl`;
 const out = createWriteStream(outFile);
-for (const r of records.sort((a, b) => a.tState - b.tState)) out.write(JSON.stringify(r) + '\n');
+// Answers came back in whatever order they finished. Each is read against the ones before it,
+// as a live run would have, so that has to wait until they are back in order.
+for (const r of fillLeans(records.sort((a, b) => a.tState - b.tState))) out.write(JSON.stringify(r) + '\n');
 out.end(() => {
   console.error(`wrote ${records.length} decisions (${failed} failed, ${retried} retried, ${rateLimited} rate-limit waits, $${spentUsd.toFixed(4)} of new calls at list price) to ${outFile}`);
   void closeConnections();

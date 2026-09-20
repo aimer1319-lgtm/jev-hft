@@ -1,8 +1,9 @@
 // Score decision logs from `live` or `backtest`.
 //   1. Latency budget: where the time goes between an exchange event and a usable decision.
 //   2. Signal quality per horizon: Jev vs zero-latency baselines, net of trading cost.
-//   3. Latency decay: how much of the move happens while waiting for the model.
-//   4. Calibration of Jev's direction probabilities.
+//   3. Jev's lean: how one-sided its answers are, and what reading them against its usual lean is worth.
+//   4. Latency decay: how much of the move happens while waiting for the model.
+//   5. Calibration of Jev's direction probabilities.
 //
 //   npm run analyze -- data/decisions/<file>.jsonl [more files...]
 
@@ -11,6 +12,7 @@ import { config } from './config.ts';
 import type { DecisionRecord } from './engine.ts';
 import { bps as bp, independentCount, mean, num, partialSpearman, spearman, summarize, tStat } from './lib/stats.ts';
 import { DIRECTIONS, type DirectionId } from './model/jev.ts';
+import { fillLeans } from './model/lean.ts';
 
 const files = process.argv.slice(2);
 if (files.length === 0) throw new Error('usage: npm run analyze -- <decisions.jsonl> [...]');
@@ -23,6 +25,8 @@ const recs: DecisionRecord[] = files
   )
   .sort((a, b) => a.tState - b.tState); // several files may overlap or arrive out of order
 if (recs.length === 0) throw new Error('no decisions in input');
+// Files from before leans were read against Jev's usual one get the same reading a live run would have made.
+fillLeans([...recs].sort((a, b) => a.tResp - b.tResp));
 
 const fmt = (x: number, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : '-');
 const pad = (s: string | number, n: number) => String(s).padStart(n);
@@ -76,11 +80,14 @@ function score(signal: number[], ret: number[], horizonS: number): Score {
 
 const jevFor = Object.fromEntries(Object.entries(DIRECTIONS).map(([id, d]) => [d.seconds, `jev_${id.slice(4)}`]));
 const baselines = ['obi1', 'obi5', 'flow5', 'mom5'];
+/** jev_10s -> jevc_10s: the same answer with Jev's usual lean taken out (src/model/lean.ts). */
+const corrected = (name: string) => name.replace('jev_', 'jevc_');
 const jevNames = Object.keys(recs[0]!.signals).filter(k => k.startsWith('jev_'));
 
 console.log('SIGNAL QUALITY    Spearman IC with forward mid return');
 console.log('  n = decisions; ind = decisions far enough apart (max(horizon, 5s)) to be separate evidence; t is computed from ind');
 console.log('  jev_* scored from when the answer arrived (tradable); @state = from the snapshot (information only)');
+console.log('  jevc_* = the same answer with Jev\'s usual lean taken out: the ranking barely changes, which way it points does (hit%)');
 console.log('  baselines are computed in microseconds, so they are scored from the snapshot');
 console.log('  horizon  signal            n    ind      IC      t   hit%  Q5-Q1bp  net edge bp');
 for (const h of config.horizons) {
@@ -90,6 +97,7 @@ for (const h of config.horizons) {
   console.log(`  ${pad(h + 's', 7)}  perfect foresight: mean |move| ${fmt(oracle, 2)}bp vs ${config.feeBps}bp cost`);
   const lines: [string, Score][] = [];
   for (const name of jevNames) lines.push([name, score(recs.map(r => num(r.signals[name])), retResp, h)]);
+  if (jevFor[h]) lines.push([corrected(jevFor[h]!), score(recs.map(r => num(r.signals[corrected(jevFor[h]!)])), retResp, h)]);
   if (jevFor[h]) lines.push([`${jevFor[h]} @state`, score(recs.map(r => num(r.signals[jevFor[h]!])), retState, h)]);
   for (const name of baselines) lines.push([name, score(recs.map(r => num(r.signals[name])), retState, h)]);
   for (const [name, s] of lines) {
@@ -108,7 +116,38 @@ for (const h of config.horizons) {
 }
 console.log('');
 
-// ---- 3. latency decay -----------------------------------------------------------
+// ---- 3. Jev's lean ----------------------------------------------------------------
+// Everything here is measured from when the answer arrived, on decisions where the price moved.
+console.log("JEV'S LEAN    how one-sided the answers are, and what reading them against Jev's usual lean is worth");
+const share = (xs: boolean[]) => (xs.length ? xs.filter(Boolean).length / xs.length : NaN);
+const pct = (x: number) => (Number.isFinite(x) ? `${(x * 100).toFixed(0)}%` : '-');
+for (const [id, d] of Object.entries(DIRECTIONS)) {
+  const name = `jev_${id.slice(4)}`;
+  const rows = recs
+    .map(r => ({ raw: num(r.signals[name]), lean: num(r.signals[corrected(name)]), usual: num(r.lean?.[id as DirectionId]?.usual), book: num(r.signals.obi1), move: bp(r.fwdResp[d.seconds], r.midResp) }))
+    .filter(x => Number.isFinite(x.raw) && Number.isFinite(x.move));
+  if (rows.length < 50) continue;
+  const moved = rows.filter(x => x.move !== 0);
+  const right = (xs: typeof rows, key: 'raw' | 'lean' | 'book') => share(xs.filter(x => x[key] !== 0 && Number.isFinite(x[key])).map(x => Math.sign(x[key]) === Math.sign(x.move)));
+  console.log(`  ${id.padEnd(8)} the price rose in ${pct(share(moved.map(x => x.move > 0)))} of the moves; Jev leaned up in ${pct(share(rows.filter(x => x.raw !== 0).map(x => x.raw > 0)))} of its answers (usual lean ${fmt(summarize(rows.map(x => x.usual).filter(Number.isFinite)).p50)})`);
+  const known = moved.filter(x => Number.isFinite(x.lean));
+  if (known.length < 50) {
+    console.log(`  ${''.padEnd(8)} too few answers close together to know the usual lean (it needs 60 within 15 minutes)`);
+    continue;
+  }
+  console.log(`  ${''.padEnd(8)} right way: ${pct(right(known, 'raw'))} as answered -> ${pct(right(known, 'lean'))} with the usual lean taken out   (best level of the book alone: ${pct(right(known, 'book'))})`);
+  // Does a stronger lean mean more? Fifths of the corrected lean's strength, weakest first.
+  const byStrength = [...known].filter(x => x.lean !== 0).sort((a, b) => Math.abs(a.lean) - Math.abs(b.lean));
+  const fifths = Array.from({ length: 5 }, (_, i) => byStrength.slice(Math.floor((i * byStrength.length) / 5), Math.floor(((i + 1) * byStrength.length) / 5)));
+  console.log(`  ${''.padEnd(8)} right way by strength of lean, weakest fifth to strongest: ${fifths.map(xs => pct(right(xs, 'lean'))).join(' -> ')}`);
+  const both = known.filter(x => x.lean !== 0 && x.book !== 0 && Number.isFinite(x.book));
+  const agree = both.filter(x => Math.sign(x.lean) === Math.sign(x.book));
+  const disagree = both.filter(x => Math.sign(x.lean) !== Math.sign(x.book));
+  console.log(`  ${''.padEnd(8)} Jev and the book agree ${pct(agree.length / both.length)} of the time and are then right ${pct(right(agree, 'lean'))}; when they disagree Jev is right ${pct(right(disagree, 'lean'))}`);
+}
+console.log('');
+
+// ---- 4. latency decay -----------------------------------------------------------
 console.log('LATENCY DECAY    what moved while the model was thinking');
 const during = recs.map(r => bp(r.midResp, r.midState));
 console.log(`  |mid move| during model call: mean ${fmt(mean(during.map(Math.abs)), 3)}bp`);
@@ -118,7 +157,7 @@ for (const name of jevNames) {
 }
 console.log('');
 
-// ---- 4. calibration -------------------------------------------------------------
+// ---- 5. calibration -------------------------------------------------------------
 console.log('CALIBRATION    predicted P(up)/P(down) vs realized frequency, from the snapshot');
 console.log('  each decision is judged against the "flat" threshold it was asked with; median threshold shown per question');
 for (const [id, d] of Object.entries(DIRECTIONS)) {

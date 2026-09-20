@@ -1,7 +1,7 @@
 // The two drawings on the page, on <canvas>: the price chart with Jev's calls marked on it, and
 // the small response-time chart. Hand-drawn so the page has nothing to download or build.
 
-import type { Decision, Tick } from '../collector.ts';
+import { actedLean, type Decision, type Tick } from '../collector.ts';
 
 type Theme = { text: string; muted: string; faint: string; line: string; up: string; down: string; flat: string; accent: string; accent2: string; panel: string; mono: string };
 
@@ -210,7 +210,6 @@ export class PriceChart {
     });
 
     // Jev's calls for the chosen horizon, placed where and when the answer arrived
-    const key = `jev_${this.horizonS}s`;
     const shown = this.decisions.filter(d => d.answer && d.answer.tResp >= tStart && typeof d.answer.midResp === 'number');
     const thin = Math.max(1, Math.ceil(shown.length / 260)); // keep a long window readable
     let nearest: Hover = null;
@@ -218,7 +217,7 @@ export class PriceChart {
       const a = d.answer!;
       const px = x(a.tResp);
       const py = y(a.midResp!);
-      const signal = a.signals[key] ?? 0;
+      const signal = actedLean(a.signals, this.horizonS) ?? 0;
       if (this.pointerX !== null && Math.abs(px - this.pointerX) < 9 && (!nearest || Math.abs(px - this.pointerX) < Math.abs(nearest.x - this.pointerX))) nearest = { decision: d, x: px, y: py };
       if (i % thin !== 0) return;
       const move = d.outcome?.fromResp[String(this.horizonS)];
@@ -257,7 +256,7 @@ export class PriceChart {
     ctx.textBaseline = 'middle';
     ctx.fillText(label, plot.x1 + 11, ly + 0.5);
 
-    // strips: Jev's lean over time at each horizon (green up, red down, stronger = surer)
+    // strips: Jev's lean over time at each horizon, usual lean taken out (green up, red down, stronger = surer)
     HORIZONS.forEach((h, row) => {
       const top = plot.y1 + RIBBON.top + row * (RIBBON.row + RIBBON.gap);
       ctx.fillStyle = alpha(theme.flat, 0.1);
@@ -265,7 +264,7 @@ export class PriceChart {
       ctx.roundRect(plot.x0, top, plot.x1 - plot.x0, RIBBON.row, 2);
       ctx.fill();
       shown.forEach((d, i) => {
-        const s = d.answer!.signals[`jev_${h}s`] ?? 0;
+        const s = actedLean(d.answer!.signals, h) ?? 0;
         if (Math.abs(s) < 0.02) return;
         const from = Math.max(plot.x0, x(d.answer!.tResp));
         const next = shown[i + 1]?.answer!.tResp;

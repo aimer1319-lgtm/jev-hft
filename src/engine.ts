@@ -8,7 +8,8 @@ import { nowMs, type MarketEvent } from './feed/types.ts';
 import { Backoff } from './lib/backoff.ts';
 import { encode } from './market/encode.ts';
 import { MarketState, type Features } from './market/state.ts';
-import { decide, directionSignal, flatThresholds, isTimeout, RateLimitedError, type FlatThresholds, type ModelResult } from './model/jev.ts';
+import { decide, directionSignal, flatThresholds, isTimeout, RateLimitedError, type DirectionId, type FlatThresholds, type ModelResult } from './model/jev.ts';
+import { LeanBook, type LeanReading } from './model/lean.ts';
 import type { Emit } from './telemetry/events.ts';
 
 export type DecisionRecord = {
@@ -28,9 +29,17 @@ export type DecisionRecord = {
   /** The move that counted as "flat" in each question (v2; before that, the fixed DIRECTIONS values). */
   flatBps?: FlatThresholds;
   probabilities: ModelResult['probabilities'];
-  /** TypeSafe's confidence in each answer. */
+  /** TypeSafe's confidence in each answer: the probability of the answer it picked, which is usually "flat". */
   confidence?: Record<string, number>;
-  /** Directional signals: Jev per horizon plus zero-latency baselines. */
+  /**
+   * What Jev's lean had usually been in the minutes before this answer, per question. Unknown
+   * (saved as null) until enough answers have arrived. Records from before this existed have none.
+   */
+  lean?: Record<DirectionId, LeanReading>;
+  /**
+   * Directional signals: Jev per horizon as answered (`jev_*`), the same with its usual lean
+   * taken out (`jevc_*`, src/model/lean.ts), and the zero-latency baselines.
+   */
   signals: Record<string, number>;
   midState: number;
   midResp: number;
@@ -47,8 +56,12 @@ export function jevSignals(p: ModelResult['probabilities']) {
   return { jev_2s: directionSignal(p.dir_2s), jev_10s: directionSignal(p.dir_10s), jev_60s: directionSignal(p.dir_60s) };
 }
 
-/** The parts of a record that come from the model's answer, shared by live runs and backtests. */
-export function answerFields(res: ModelResult, f: Features, flat: FlatThresholds) {
+/**
+ * The parts of a record that come from the model's answer, shared by live runs and backtests.
+ * A backtest asks about many snapshots at once, so it has no "answers so far" to read a lean
+ * against; it leaves `read` out and fills the readings in once every answer is in (fillLeans).
+ */
+export function answerFields(res: ModelResult, f: Features, flat: FlatThresholds, read?: ReturnType<LeanBook['take']>) {
   return {
     ...(res.meta.providerMs !== undefined ? { providerMs: res.meta.providerMs } : {}),
     ...(res.meta.inputTokens !== undefined ? { inputTokens: res.meta.inputTokens } : {}),
@@ -56,7 +69,8 @@ export function answerFields(res: ModelResult, f: Features, flat: FlatThresholds
     flatBps: flat,
     probabilities: res.probabilities,
     ...(res.meta.confidence ? { confidence: res.meta.confidence } : {}),
-    signals: { ...jevSignals(res.probabilities), ...baselineSignals(f) },
+    ...(read ? { lean: read.lean } : {}),
+    signals: { ...jevSignals(res.probabilities), ...read?.signals, ...baselineSignals(f) },
   };
 }
 
@@ -75,6 +89,8 @@ export class LiveEngine {
   private inFlight = 0;
   private lastDecision = -Infinity;
   private readonly backoff = new Backoff();
+  /** Jev's recent answers, which each new one is read against. */
+  private readonly leans = new LeanBook();
   private readyAt = NaN;
   /** Answered decisions waiting for their forward prices, oldest first. */
   private pending: DecisionRecord[] = [];
@@ -164,7 +180,7 @@ export class LiveEngine {
         modelMs: tResp - tBuilt,
         tResp,
         state: text,
-        ...answerFields(res, f, flat),
+        ...answerFields(res, f, flat, this.leans.take(tResp, res.probabilities)),
         midState: f.mid,
         midResp: this.state.book.mid,
         fwdState: {},
@@ -182,6 +198,7 @@ export class LiveEngine {
         costUsd: rec.costUsd ?? null,
         probabilities: rec.probabilities,
         confidence: rec.confidence ?? null,
+        lean: rec.lean ?? null,
         signals: rec.signals,
         midResp: rec.midResp,
       });

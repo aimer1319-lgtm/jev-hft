@@ -131,31 +131,80 @@ already used only pays for the new questions.
 
 ### What Jev has shown on market data so far
 
-On the 31-minute recording (a quiet Saturday evening, so one kind of market only):
+From a nine-hour live run (30,312 decisions, one a second), which replaced an earlier 31-minute
+recording and agrees with it:
 
 | | 2 seconds ahead | 10 seconds ahead | 60 seconds ahead |
 |---|---|---|---|
-| Jev | 0.10 to 0.13 | 0.12 to 0.17 | about 0 |
-| Top-of-book imbalance (one line of arithmetic) | 0.22 | 0.25 | 0.20 |
-| Jev, once the simple rules are accounted for | −0.10 to −0.14 | about 0 | about 0 |
+| Jev | 0.20 | 0.21 | 0.04 |
+| Top-of-book imbalance (one line of arithmetic) | 0.26 | 0.26 | 0.11 |
+| Jev, once the simple rules are accounted for | 0.01 | 0.04 | −0.03 |
 
-(Rank correlation with the next price move; 0 means no relationship. The ranges cover the four
-threshold settings. The 2- and 10-second numbers rest on hundreds of separate moments; the
-60-second ones on only 30, so treat those as rough.)
+(Rank correlation with the next price move; 0 means no relationship.)
 
-- **Jev does pick something up**, but about half as much as the simplest rule, which costs nothing
-  and takes no time.
-- **It adds nothing the rules don't already say.** Jev is shown the same numbers the rules are
-  built from. Once what the rules explain is removed, nothing of Jev's signal is left, and at 2
-  seconds what's left points slightly the wrong way.
+- **Jev does pick something up**, but less than the simplest rule, which costs nothing and takes
+  no time.
+- **It adds almost nothing the rules don't already say.** Jev is shown the same numbers the rules
+  are built from, and about four fifths of its answer can be reproduced as a fixed weighted sum of
+  those numbers. It weights the order book most, which is right, but it also gives real weight to
+  recent returns and to the split of buy and sell trades, which say little about what comes next.
+  Its 60-second answer is close to "the last minute's move, continued", and the last minute's move
+  tells you nothing about the next one. That is why there is nothing reliable at 60 seconds.
 - **Its probabilities are far too confident.** When it said 80 to 100%, the move happened about
   one time in ten.
-- **It leaned "down" all evening** (about 0.4 to 0.5 for down against 0.05 to 0.1 for up) in a
-  market that went nowhere.
+- **It leans "down" nearly all the time.** The price rose as often as it fell, yet Jev leaned down
+  in more than 80% of its 2- and 10-second answers. See the next section for why, and what the
+  pipeline does about it.
 
-This is one evening, and a busier market may look different. But it fits the rest of what we've
-found: reading an order book is arithmetic, which simple rules already do well, while judging
-what a headline means is language, which is what Jev is for.
+This fits the rest of what we've found: reading an order book is arithmetic, which simple rules
+already do well, while judging what a headline means is language, which is what Jev is for.
+
+### Reading Jev's lean against its usual one
+
+**The problem.** Some things Jev is shown are one-sided all day. Over those nine hours there were
+about three sell trades for every buy, the ask side of the book was a little deeper than the bid
+side, and the price drifted down. Jev reads each of those as bearish, every second. So its answer
+sits around −0.2 to −0.4 when nothing is happening, and "slightly down" is really its neutral.
+Taken at face value, four trades in five were shorts, and an answer of −0.1 (more bullish than
+usual) was traded as a short too.
+
+**What the pipeline does** (`src/model/lean.ts`). It keeps Jev's answers from the last 15 minutes
+and reads each new answer against the middle of them. An answer of −0.1 when Jev has usually
+been saying −0.4 is a lean up of +0.3. That corrected lean is what the dashboard draws, scores,
+and trades. Both are saved in every record (`signals.jev_*` as answered, `signals.jevc_*`
+corrected), along with the usual lean it was read against (`lean`). For the first minute of a
+run there aren't enough answers yet, and no call is made.
+
+**What it was worth,** on the three hours of that run that played no part in choosing it:
+
+| | 2 seconds | 10 seconds |
+|---|---|---|
+| Pointed the right way, as answered | 59% | 59% |
+| Pointed the right way, usual lean taken out | 66% | 61% |
+| Made per trade, as answered → corrected | 0.025 → 0.047 bp | 0.089 → 0.142 bp |
+
+**Why this isn't fitted to one day's prices.** It never looks at prices. It uses only Jev's own
+earlier answers, so there is nothing about the market for it to memorise. And the one number in
+it doesn't matter: windows from 2 to 60 minutes, using the middle or the average, all scored
+within about two points of each other.
+
+**A stronger lean means more.** Once corrected, the weakest fifth of leans was right 55% of the
+time at 2 seconds and the strongest fifth 74%, rising steadily in between. Before correcting, the
+weakest two fifths were right less than half the time, because they were really leans the other
+way. So the strength of the corrected lean is a fair guide to how much to stake.
+
+**TypeSafe's confidence is not that guide.** It is the probability of whichever answer Jev
+picked. At short horizons the answer it picks is usually "flat", so confidence is highest exactly
+when Jev expects nothing to happen. It carries nothing the probabilities don't already say, and
+the pipeline no longer uses it for sizing.
+
+**One honest caveat.** At 60 seconds, Jev taken at face value looked profitable on the first six
+hours. That was the downward drift paying a rule that was short nearly all the time, not skill:
+on the three flat hours that followed it lost. With the lean taken out, the 60-second answer
+shows nothing either way, which is the truth of it.
+
+`npm run analyze` prints all of this for any run (the "Jev's lean" section), so it can be
+checked again on a different day rather than taken on trust.
 
 ## The mock model
 
@@ -171,9 +220,14 @@ The tests use a different stand-in, a scripted model that can be told to fail in
 
 ## Ideas for later
 
-- **Using Jev's confidence:** it's recorded now. Once there's enough data, the news report's
-  "which way of combining the answers ranks moves best" table will show whether weighting by it
-  helps.
+- **Using Jev's confidence on news:** it's recorded. On market data it turned out to be just the
+  probability of the answer Jev picked, so it is not used there. Whether it helps on news is
+  still open: the news report's "which way of combining the answers ranks moves best" table will
+  show it once there's enough data.
+- **Showing Jev less.** Jev gives real weight to inputs that predict little (recent returns, the
+  count of buy against sell trades). Leaving those out of the text might make its answers
+  sharper. It needs a backtest on recorded data, chosen on one stretch and checked on another,
+  because trying several wordings and keeping the best is an easy way to fool yourself.
 - **Racing two requests:** send the same request twice and use whichever answers first, to cut
   down the occasional slow response. It doubles the cost.
 - **Shorter question wording:** questions are most of what a market-data call costs. Shorter

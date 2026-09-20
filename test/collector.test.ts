@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DashboardState, LIMITS, type DashboardEvent, type NewsEntry } from '../src/dashboard/collector.ts';
+import { actedLean, DashboardState, LIMITS, type DashboardEvent, type NewsEntry } from '../src/dashboard/collector.ts';
 
 const T0 = 1_800_000_000_000;
 let seq = 0;
@@ -112,4 +112,11 @@ test('headlines restored from disk slot in by time, never twice, and gain their 
   s.apply(ev({ type: 'news-restored', program: 'news', entry: restored('old', T0, true) }));
   assert.equal(s.news.items[0]!.status, 'answered');
   assert.deepEqual(s.news.items[0]!.outcomes, { 'BTC-USD': { '60': 1 } }, 'what was already known about it is kept');
+});
+
+test('the lean that is drawn is the one acted on: the corrected one, or the answer itself from an older pipeline', () => {
+  assert.equal(actedLean({ jev_10s: -0.3, jevc_10s: 0.2 }, 10), 0.2);
+  assert.equal(actedLean({ jev_10s: -0.3, jevc_10s: null }, 10), null, 'the usual lean is not known yet, so there is no call, rather than a wrong one');
+  assert.equal(actedLean({ jev_10s: -0.3 }, 10), -0.3, 'a pipeline from before the correction existed');
+  assert.equal(actedLean({}, 10), null);
 });

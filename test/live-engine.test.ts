@@ -73,6 +73,30 @@ test('a decision is recorded with what was asked, what was answered, simple rule
   assert.match(r.state, /^BTC-USD \d\d:\d\d UTC mid 100\.00/);
 });
 
+test("each answer is read against the ones before it, once there are enough of them", async () => {
+  Object.assign(config, { warmupMs: 0, minIntervalMs: 1000 });
+  const s = setup();
+  const t = nowMs();
+  // The scripted model always answers up 0.8 / down 0.1, so its usual lean settles at +0.7.
+  for (let i = 0; i <= 61; i++) {
+    s.engine.onEvent(book(t + i * 1000, 100, i === 0));
+    await settle();
+  }
+  s.engine.flush(Infinity, true);
+  assert.equal(s.written.length, 62);
+  const first = s.written[0]!;
+  assert.ok(Number.isNaN(first.lean!.dir_10s.usual), 'nothing to read the first answer against');
+  assert.ok(Number.isNaN(first.signals.jevc_10s));
+  assert.ok(Math.abs(first.signals.jev_10s! - 0.7) < 1e-12, 'the answer itself is recorded as before');
+  assert.ok(Number.isNaN(s.written[59]!.signals.jevc_10s), 'one answer short of enough');
+  const later = s.written[60]!;
+  assert.ok(Math.abs(later.lean!.dir_10s.usual - 0.7) < 1e-12);
+  assert.ok(Math.abs(later.signals.jevc_10s!) < 1e-12, 'an answer that is exactly the usual one is no lean at all');
+  const told = s.told.filter(e => e.type === 'answer');
+  assert.deepEqual(told[60]!.type === 'answer' && told[60]!.lean, later.lean, 'and the dashboard is told the same');
+  assert.equal(JSON.parse(JSON.stringify(first)).signals.jevc_10s, null, 'saved as "unknown", not as zero');
+});
+
 test('decisions keep their spacing, and one at a time', async () => {
   Object.assign(config, { warmupMs: 0, minIntervalMs: 1000 });
   const s = setup();

@@ -1,7 +1,7 @@
 // Turns the dashboard's state into what is on the page. Each function owns one card, touches
 // the page only where something changed, and can be called as often as you like.
 
-import type { DashboardState, Decision, NewsEntry, Pnl, Scoreboard } from '../collector.ts';
+import { actedLean, type DashboardState, type Decision, type NewsEntry, type Pnl, type Scoreboard } from '../collector.ts';
 import * as f from './format.ts';
 
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -112,12 +112,18 @@ export function renderLatestAnswer(state: DashboardState, msSince: (t: number) =
       setText(segs[i]!, v >= 0.15 ? f.pct(v) : '');
     });
     setText(row.querySelector<HTMLElement>('.flat')!, `flat: ±${d.flatBps[id as keyof typeof d.flatBps]} bp`);
-    const lean = (p?.up ?? 0) - (p?.down ?? 0);
+    // The call is Jev's answer read against what it has usually been saying, not the answer at
+    // face value: Jev leans "down" most of the time, so a little less down than usual is a lean up.
+    const answered = (p?.up ?? 0) - (p?.down ?? 0);
+    const lean = actedLean(a.signals, h);
+    const usual = a.lean?.[id]?.usual;
     const read = row.querySelector<HTMLElement>('.hz-read')!;
-    read.className = `hz-read ${lean > 0.05 ? 'up' : lean < -0.05 ? 'down' : ''}`;
-    setText(read.querySelector('b')!, `${lean > 0.05 ? 'up' : lean < -0.05 ? 'down' : 'no lean'} ${f.signed(lean)}`);
-    const sure = a.confidence?.[id];
-    setText(read.querySelector('span')!, sure === undefined ? ' ' : `Jev's confidence ${f.fixed(sure)}`);
+    read.className = `hz-read ${lean === null ? '' : lean > 0.05 ? 'up' : lean < -0.05 ? 'down' : ''}`;
+    setText(read.querySelector('b')!, lean === null ? 'no call yet' : `${lean > 0.05 ? 'up' : lean < -0.05 ? 'down' : 'no lean'} ${f.signed(lean)}`);
+    setText(
+      read.querySelector('span')!,
+      typeof usual === 'number' ? `answered ${f.signed(answered)}, usually ${f.signed(usual)}` : a.lean === undefined ? ' ' : `answered ${f.signed(answered)}; learning its usual lean`,
+    );
   }
 
   const model = a.providerMs;
@@ -226,14 +232,21 @@ export function renderLatency(state: DashboardState) {
 const usdSigned = (x: number) => `${x > 0 ? '+' : x < 0 ? '\u2212' : ''}$${Math.abs(x).toFixed(2)}`;
 
 /**
- * What one of the two trading rules would have made at the chosen horizon. `prefix` selects which
- * card's elements to fill in, so the same code drives both.
+ * What one of the trading rules would have made at the chosen horizon. `prefix` selects which
+ * card's elements to fill in, so the same code drives both. `faceValue` is the plain rule with
+ * Jev's answers taken as they came, shown on the first card as the yardstick for the correction.
  */
-export function renderPnl(prefix: 'pnl' | 'fpnl', pnl: Pnl | null, horizonS: number) {
+export function renderPnl(prefix: 'pnl' | 'fpnl', pnl: Pnl | null, horizonS: number, faceValue: Pnl | null = null) {
   const id = (suffix: string) => $(`${prefix}-${suffix}`);
   const leg = pnl?.legs.find(l => l.horizonS === horizonS);
   const total = id('money');
   setText(id('sub'), pnl && pnl.n > 0 ? `${f.int(pnl.n)} finished decisions \u00b7 held ${horizonS} s each` : '');
+  if (prefix === 'pnl') {
+    // The same rule on the same decisions, without the correction: is reading Jev against its usual lean still paying?
+    const was = faceValue?.legs.find(l => l.horizonS === horizonS);
+    const judged = was ? was.wins + was.losses : 0;
+    setText(id('face'), was && was.trades > 0 ? `${f.bp(was.totalBps)}${judged > 0 ? ` \u00b7 ${f.pct(was.wins / judged)} your way` : ''}` : '\u2014');
+  }
   if (!pnl || !leg || leg.trades === 0) {
     total.className = 'pnl-money';
     setText(total, '\u2014');
@@ -243,7 +256,7 @@ export function renderPnl(prefix: 'pnl' | 'fpnl', pnl: Pnl | null, horizonS: num
     setHtml(
       id('note'),
       prefix === 'pnl'
-        ? `A trade only counts once the price ${horizonS} seconds after the answer is known, so this fills in about a minute behind the decisions themselves.`
+        ? `A trade only counts once the price ${horizonS} seconds after the answer is known, so this fills in about a minute behind the decisions themselves. A new run also spends its first minute learning Jev's usual lean, and makes no calls until it has.`
         : `Fills in the same way, once there have been enough calls that also clear its filters below.`,
     );
     return;
@@ -253,7 +266,11 @@ export function renderPnl(prefix: 'pnl' | 'fpnl', pnl: Pnl | null, horizonS: num
   total.className = `pnl-money ${leg.totalBps > 0 ? 'up' : leg.totalBps < 0 ? 'down' : ''}`;
   setText(total, usdSigned(dollars));
   setText(id('bps'), `${f.bp(leg.totalBps)} in all`);
-  setHtml(id('stake'), `$${f.int(pnl.notionalUsd)} a trade${prefix === 'fpnl' ? ' at full size' : ''}<br>${pnl.feeBps === 0 ? 'no trading costs' : `${f.fixed(pnl.feeBps, 1)} bp cost a trade`}`);
+  const averageStake = leg.trades > 0 ? (leg.staked / leg.trades) * pnl.notionalUsd : pnl.notionalUsd;
+  setHtml(
+    id('stake'),
+    `${prefix === 'fpnl' ? `$${f.int(pnl.notionalUsd)} on an ordinary lean<br>$${f.int(averageStake)} a trade on average` : `$${f.int(pnl.notionalUsd)} a trade`}<br>${pnl.feeBps === 0 ? 'no trading costs' : `${f.fixed(pnl.feeBps, 1)} bp cost a trade`}`,
+  );
   const decided = leg.wins + leg.losses;
   setText(id('trades'), f.int(leg.trades));
   setText(id('win'), decided > 0 ? f.pct(leg.wins / decided) : '\u2014');
@@ -265,8 +282,8 @@ export function renderPnl(prefix: 'pnl' | 'fpnl', pnl: Pnl | null, horizonS: num
 
   const rule =
     prefix === 'pnl'
-      ? `Every answer with a lean is traded, all the same size: take Jev's side at the mid price the moment the answer arrived, close ${horizonS} seconds later. Answers with no lean sit out.`
-      : `The same rule, refined: it also sits out unless a simple, zero-latency rule (order-book imbalance, trade flow, or momentum) points the same way, and sits out if a headline from the last 15 minutes leans the other way. What is left is sized by how strong Jev's lean was and how sure TypeSafe reported being, rather than betting the same amount every time.`;
+      ? `Every answer with a lean is traded, all the same size: take Jev's side at the mid price the moment the answer arrived, close ${horizonS} seconds later. Jev's side is its answer read against what it has usually been saying over the last 15 minutes, because at face value it leans \u201cdown\u201d most of the time whatever the market does next. \u201cAt face value\u201d is what the same rule made without that correction.`
+      : `The same calls, but only when the best level of the order book points the same way: when the two disagreed, Jev was right less than half the time. It also sits out if a headline from the last 15 minutes leans the other way. What is left is staked by how strong the lean is next to Jev's ordinary one, up to twice the normal stake.`;
   setHtml(
     id('note'),
     `${rule} Trades overlap, so this assumes you could hold several at once.<br>
@@ -427,11 +444,11 @@ export function tooltipHtml(d: Decision, horizonS: number) {
   const a = d.answer!;
   const rows = HORIZONS.map(h => {
     const p = a.probabilities[`dir_${h}s`];
-    const lean = (p?.up ?? 0) - (p?.down ?? 0);
+    const lean = actedLean(a.signals, h) ?? 0;
     return `<div class="tt-row"><span>${h} s</span>${probHtml(p, true)}<b class="${lean > 0.05 ? 'ok' : lean < -0.05 ? 'bad' : ''}">${f.signed(lean)}</b></div>`;
   }).join('');
   const move = d.outcome?.fromResp[String(horizonS)];
-  const signal = a.signals[`jev_${horizonS}s`] ?? 0;
+  const signal = actedLean(a.signals, horizonS) ?? 0;
   let verdict = `<span>${horizonS} s later: not known yet</span>`;
   if (typeof move === 'number') {
     const judged = move !== 0 && Math.abs(signal) >= 0.05;

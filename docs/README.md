@@ -47,13 +47,20 @@ check later whether Jev's judgments were right, and whether they arrived fast en
 - **The market-data path has a cost problem:** over seconds, Bitcoin's price barely moves.
   Even a perfect prediction would earn less than the fees to trade on it. That's why the news
   path exists: news can move prices by much more.
-- **On market data, Jev doesn't beat a one-line rule.** On 31 minutes of recorded data (372
-  decisions), Jev's calls had a small real relationship with the next move at 2 and 10 seconds.
-  Simply comparing how much is waiting to buy against how much is waiting to sell did about twice
-  as well, instantly and for free, and once that rule was accounted for nothing of Jev's signal
-  was left. Its probabilities were also far too confident. One quiet evening isn't the last word,
-  but it points the same way as the cost problem: the news path is where Jev's understanding of
+- **On market data, Jev doesn't beat a one-line rule.** Over a nine-hour live run (30,312
+  decisions), Jev's calls had a real relationship with the next move at 2 and 10 seconds. Simply
+  comparing how much is waiting to buy against how much is waiting to sell did better, instantly
+  and for free, and once that rule was accounted for almost nothing of Jev's signal was left.
+  Its probabilities were also far too confident, and at 60 seconds it showed nothing at all. It
+  points the same way as the cost problem: the news path is where Jev's understanding of
   language could matter ([model.md](model.md#what-jev-has-shown-on-market-data-so-far)).
+- **Jev leans "down" nearly all the time, so its answers are read against its usual one.** The
+  price rose as often as it fell, yet more than 80% of Jev's short-term answers leaned down,
+  because things that are one-sided all day read as bearish every second. Read against what it
+  has usually been saying, Jev pointed the right way 66% of the time at 2 seconds instead of 59%.
+  The fix looks only at Jev's own earlier answers, never at prices, and was checked on hours that
+  played no part in choosing it
+  ([model.md](model.md#reading-jevs-lean-against-its-usual-one)).
 - **Jev understands the news questions:** on test headlines it rated a surprise rate cut as
   very bullish, an exchange shutting withdrawals as very bearish, and a bakery accepting
   Bitcoin as irrelevant. Shown what had already been reported, it correctly marked a reworded
@@ -137,6 +144,7 @@ src/
   market/prices.ts      one way to ask "what did this cost at time t?" for Bitcoin and stocks alike
   market/sessions.ts    US market hours, in New York time
   model/jev.ts          how we call Jev, its connection, the market-data questions, and the mock model
+  model/lean.ts         reading Jev's lean against what it usually says, which is what gets acted on
   engine.ts             the live loop of the market-data path and its record format
   live.ts               runs the market-data path live
   record.ts             saves the Coinbase feed to disk (live.ts can do this too, with RECORD=1)

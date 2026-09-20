@@ -12,38 +12,55 @@ Everything the pipeline is doing, as it does it:
 - The price, how far apart the bid and ask are, how delayed the data is, and how long one update
   takes to handle.
 - A chart of the price with each of Jev's calls marked where and when its answer arrived: a
-  triangle pointing up or down, bigger when Jev was surer. A minute later each marker turns solid
-  if the price went that way, hollow if it didn't. Three strips under the chart show Jev's lean
-  over time at 2, 10, and 60 seconds, which makes a bias (say, leaning "down" all evening) obvious
-  at a glance. Hover over a call to see its probabilities and what the price did next.
+  triangle pointing up or down, bigger when the lean was stronger. A minute later each marker
+  turns solid if the price went that way, hollow if it didn't. Three strips under the chart show
+  the lean over time at 2, 10, and 60 seconds. Hover over a call to see its probabilities and
+  what the price did next.
+
+  A call is Jev's answer read against what it has usually been saying, not the answer at face
+  value. Jev leans "down" most of the time whatever the market does next, so an answer a little
+  less down than usual is drawn, scored, and traded as a lean up
+  ([model.md](model.md#reading-jevs-lean-against-its-usual-one)). A new run spends its first
+  minute learning that usual lean and shows dots rather than calls until it has.
 - The latest answer: the three probabilities for each horizon, the threshold that counted as
-  "flat", Jev's confidence, and where the round trip's time went (TypeSafe against the network and
-  gateway).
+  "flat", the call that came out of it (with the answer it started from and Jev's usual lean
+  beside it), and where the round trip's time went (TypeSafe against the network and gateway).
 - Exactly the text Jev was shown, and the order-book measurements behind it.
 - Response times, and the full journey from something happening on Coinbase to having an answer.
 - **Jev against the simple rules:** how often each pointed the right way over the decisions
   finished so far in this run, and what's left of Jev's score once the rules are accounted for
-  ([backtest-and-analysis.md](backtest-and-analysis.md)). Only decisions where the price actually
-  moved are counted, and nothing is shown until there are at least 20 of those.
+  ([backtest-and-analysis.md](backtest-and-analysis.md)). Jev has two rows: with its usual lean
+  taken out, which is what the pipeline acts on, and as answered, so the gap between them stays
+  in view. Only decisions where the price actually moved are counted, and nothing is shown until
+  there are at least 20 of those.
 - **If you had traded every answer:** the running total of what following Jev would have made,
   with the curve over the run, how many trades went which way, and the worst dip along the way.
-  The rule is the plainest one that could really have been followed: every answer with a lean is
-  traded, all the same size, taking Jev's side at the mid price the moment the answer arrived and
-  closing at the horizon. Answers with no lean sit out. The buttons above the price chart pick
-  which horizon it is worked out for.
+  The rule is the plainest one that could really have been followed: every call is traded, all
+  the same size, taking Jev's side at the mid price the moment the answer arrived and closing at
+  the horizon. Answers with no lean sit out. The buttons above the price chart pick which horizon
+  it is worked out for.
+
+  "At face value" on the same card is what that rule made with Jev's answers taken as they came.
+  It is there as a yardstick: the correction was chosen on one day's data, and this shows, on
+  every run since, whether it is still earning its place.
 
   Two things are worth keeping in mind when reading it. Trades overlap, so it assumes you could
   hold several at once. And prices are mid-to-mid, so by default nothing is charged for trading
   at all: `FEE_BPS` adds a cost per round trip, which is the honest way to find out whether
   anything survives it. Over short horizons the price is often exactly where it started, and
   those trades are counted separately rather than as losses.
-- **If you had traded selectively:** the same idea, run under a second, more careful rule, right
-  next to the first so the two can be compared. It sits a call out unless a simple, zero-latency
-  signal (order-book imbalance, trade flow, or momentum) points the same way, and sits out if a
-  headline from the last 15 minutes leans the other way. What is left is sized by how strong
-  Jev's lean was and how sure TypeSafe reported being, rather than betting the same amount every
-  time. Fresh, relevant news is often not available (most sources publish only a few times an
-  hour), and when there is none this rule falls back to the technical check alone.
+- **If you had traded selectively:** the same calls under a more careful rule, right next to the
+  first so the two can be compared. It trades only when the best level of the order book points
+  the same way as Jev, because when the two disagreed Jev was right less than half the time. It
+  sits out if a headline from the last 15 minutes leans the other way. And it stakes more on a
+  stronger lean: an ordinary lean gets the normal stake, a lean twice as strong as usual gets
+  twice that, and nothing gets more. Stakes average out at about the normal one, so the two
+  cards' totals can be compared directly; "average per stake" is what each unit staked made.
+
+  Most of this rule's accuracy comes from the order book, not from Jev. The book alone points the
+  right way about two times in three at 2 seconds. Jev's agreement adds a few points on top of
+  that. Fresh, relevant news is often not available (most sources publish only a few times an
+  hour), and when there is none the rule simply goes without it.
 
 **News** (when `npm run news` is running)
 

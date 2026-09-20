@@ -44,7 +44,7 @@ export type Scoreboard = {
 };
 export type ScoreboardUpdate = { type: 'scoreboard'; program: 'live'; board: Scoreboard };
 
-/** What following Jev's leans at one horizon would have made: basis points on a fixed stake per trade. */
+/** What following Jev's leans at one horizon would have made, in basis points of one normal stake. */
 export type PnlLeg = {
   horizonS: number;
   /** Decisions that were actually traded (a strategy can sit some out). */
@@ -53,6 +53,9 @@ export type PnlLeg = {
   wins: number;
   losses: number;
   totalBps: number;
+  /** Normal stakes put down in all: the same as `trades` for a rule that always bets one, less or more for one that sizes its bets. */
+  staked: number;
+  /** Made per normal stake put down. */
   avgBps: number | null;
   /** The best and worst single call, at full size, so these describe the call rather than the stake. */
   bestBps: number | null;
@@ -72,11 +75,12 @@ export type Pnl = {
   legs: PnlLeg[];
 };
 /**
- * `baseline`: every lean is traded, all the same size. `filtered`: the same lean, but only when a
- * simple zero-latency rule agrees and no very recent headline disagrees, sized by how strong and
- * how sure the call was rather than betting the same amount every time (docs/dashboard.md).
+ * `asAnswered`: every lean is traded at face value, all the same size. `corrected`: the same, with
+ * Jev's usual lean taken out first. `selective`: the corrected lean, but only when the best level
+ * of the order book agrees and no very recent headline disagrees, staking more on a stronger lean
+ * (docs/dashboard.md).
  */
-export type PnlSet = { baseline: Pnl; filtered: Pnl };
+export type PnlSet = { asAnswered: Pnl; corrected: Pnl; selective: Pnl };
 export type PnlUpdate = { type: 'pnl'; program: 'live'; pnl: PnlSet };
 
 /** A headline from before the dashboard started, restored from what the pipeline saved to disk. */
@@ -119,6 +123,16 @@ export type DashboardSnapshot = {
   scoreboard: Scoreboard | null;
   pnl: PnlSet | null;
 };
+
+/**
+ * The lean the pipeline acts on at one horizon: Jev's answer with its usual lean taken out
+ * (src/model/lean.ts). null while that usual lean is not known yet, which is the first minute of
+ * a run. A pipeline from before this existed sends only the answer itself, so that is used.
+ */
+export function actedLean(signals: Record<string, number | null>, horizonS: number): number | null {
+  const corrected = `jevc_${horizonS}s`;
+  return corrected in signals ? (signals[corrected] ?? null) : (signals[`jev_${horizonS}s`] ?? null);
+}
 
 /** Thirty minutes of one-a-second history, and a few hundred news items. */
 export const LIMITS = { ticks: 1800, decisions: 1800, items: 300 };

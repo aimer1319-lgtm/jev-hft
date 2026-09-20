@@ -85,11 +85,13 @@ export function scoreboard(recs: DecisionRecord[]): Scoreboard {
     since: recs.length > 0 ? Math.min(...recs.map(r => r.tState)) : null,
     horizons,
     rows: [
-      { key: 'jev', label: 'Jev', isJev: true, cells: horizons.map(h => cell(h, signal(`jev_${h}s`), fromResp(h))) },
+      // Jev twice: read against its own usual lean, which is what the pipeline acts on, and at face value.
+      { key: 'jevc', label: 'Jev, usual lean taken out', isJev: true, cells: horizons.map(h => cell(h, signal(`jevc_${h}s`), fromResp(h))) },
+      { key: 'jev', label: 'Jev, as answered', isJev: false, cells: horizons.map(h => cell(h, signal(`jev_${h}s`), fromResp(h))) },
       ...RULES.map(([key, label]) => ({ key, label, isJev: false, cells: horizons.map(h => cell(h, signal(key), fromState(h))) })),
     ],
     beyond: horizons.map(h => {
-      const jev = signal(`jev_${h}s`);
+      const jev = signal(`jevc_${h}s`);
       const move = fromState(h);
       const n = jev.filter((s, i) => Number.isFinite(s) && Number.isFinite(move[i]!)).length;
       return { horizonS: h, ic: orNull(partialSpearman(jev, move, RULES.map(([key]) => signal(key)))), n };
