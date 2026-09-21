@@ -635,3 +635,28 @@ leg of network inside it.
 evidence for this decision. Keeping both also means a bad day at either one is a setting away
 from being worked around. `npm run bench` runs both by default and prints them side by side, so
 the claim above can be rechecked whenever the network or either service changes.
+
+## D53. Which of Jev's calls get a marker is decided by their time, not their place in the list
+
+**Chosen:** the price chart marks the first call in each slice of a few seconds, worked out from
+the call's own timestamp (`sliceAt` in `src/dashboard/web/charts.ts`). It used to mark every
+*n*th call by counting along the list.
+
+**Why:** the list is a window that slides. Every second the oldest call drops off the front, so
+every remaining call's position shifts by one, and "every 4th by position" then lands on an
+entirely different set. Replaying the live data, **67% of the triangles on screen were replaced
+every second**, and the count jumped whenever the window's length crossed a multiple of 260 and
+changed the spacing. Deciding by time fixes both: a call's slice never changes, so markers stay
+where they are and scroll off the edge instead of flickering.
+
+**Why it only showed up now:** the bug was always there, but until D50 Jev leaned "down" in more
+than 80% of its answers, so reshuffling swapped red triangles for other red triangles and looked
+like nothing. Once the calls were read against Jev's usual lean they split roughly evenly between
+up and down, and every reshuffle became a visible flash of colour across the whole chart. A
+cosmetic fault hidden by a data fault.
+
+**How it is kept fixed:** `test/charts.test.ts` slides a window across 40 minutes of calls and
+fails if any marker that is still on screen is dropped or swapped. The first version of that test
+passed against the old code, because its data was shorter than the window so nothing ever left
+it — the fixture was lengthened until the old rule failed on all 300 seconds it checks. A test
+for a sliding window has to actually slide.

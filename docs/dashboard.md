@@ -11,11 +11,17 @@ Everything the pipeline is doing, as it does it:
 
 - The price, how far apart the bid and ask are, how delayed the data is, and how long one update
   takes to handle.
-- A chart of the price with each of Jev's calls marked where and when its answer arrived: a
-  triangle pointing up or down, bigger when the lean was stronger. A minute later each marker
-  turns solid if the price went that way, hollow if it didn't. Three strips under the chart show
-  the lean over time at 2, 10, and 60 seconds. Hover over a call to see its probabilities and
-  what the price did next.
+- A chart of the price with Jev's calls marked where and when each answer arrived: a triangle
+  pointing up or down, bigger when the lean was stronger. A minute later each marker turns solid
+  if the price went that way, hollow if it didn't. Three strips under the chart show the lean
+  over time at 2, 10, and 60 seconds. Hover anywhere near a call to see its probabilities and
+  what the price did next, marked or not.
+
+  At one call a second a quarter of an hour holds about 900 of them, which is more than there
+  are pixels, so only the first call in each slice of a few seconds gets a triangle. Which one
+  that is depends only on when it arrived, never on where it sits in the list, so the markers
+  stay put and simply scroll off the left edge rather than being reshuffled as the chart moves
+  ([D53](decisions.md)).
 
   A call is Jev's answer read against what it has usually been saying, not the answer at face
   value. Jev leans "down" most of the time whatever the market does next, so an answer a little

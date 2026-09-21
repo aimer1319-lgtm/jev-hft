@@ -5,6 +5,21 @@ import { actedLean, type Decision, type Tick } from '../collector.ts';
 
 type Theme = { text: string; muted: string; faint: string; line: string; up: string; down: string; flat: string; accent: string; accent2: string; panel: string; mono: string };
 
+/**
+ * A busy window holds more of Jev's calls than there are pixels to draw them in, so only the
+ * first call in each slice of time gets a marker. This returns which slice a moment falls in,
+ * for a chart showing `span` milliseconds.
+ *
+ * The rule that matters: a call's slice depends only on its own timestamp. The list being drawn
+ * is a window that slides, so every second the oldest call drops off the front and every other
+ * call's position in the list shifts by one. Deciding by position instead redrew a different two
+ * thirds of the calls every second, which looked like the chart flickering (D53).
+ */
+export const sliceAt = (span: number) => {
+  const sliceMs = Math.max(1000, Math.round(span / 260 / 1000) * 1000);
+  return (t: number) => Math.floor(t / sliceMs);
+};
+
 function readTheme(): Theme {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => css.getPropertyValue(name).trim();
@@ -209,17 +224,21 @@ export class PriceChart {
       ctx.stroke(path);
     });
 
-    // Jev's calls for the chosen horizon, placed where and when the answer arrived
+    // Jev's calls for the chosen horizon, placed where and when the answer arrived. Only the
+    // first call in each slice of time is marked, so a busy window stays readable (`sliceAt`).
     const shown = this.decisions.filter(d => d.answer && d.answer.tResp >= tStart && typeof d.answer.midResp === 'number');
-    const thin = Math.max(1, Math.ceil(shown.length / 260)); // keep a long window readable
+    const sliceOf = sliceAt(span);
+    let lastSlice = NaN;
     let nearest: Hover = null;
-    shown.forEach((d, i) => {
+    shown.forEach(d => {
       const a = d.answer!;
       const px = x(a.tResp);
       const py = y(a.midResp!);
       const signal = actedLean(a.signals, this.horizonS) ?? 0;
       if (this.pointerX !== null && Math.abs(px - this.pointerX) < 9 && (!nearest || Math.abs(px - this.pointerX) < Math.abs(nearest.x - this.pointerX))) nearest = { decision: d, x: px, y: py };
-      if (i % thin !== 0) return;
+      const slice = sliceOf(a.tResp);
+      if (slice === lastSlice) return;
+      lastSlice = slice;
       const move = d.outcome?.fromResp[String(this.horizonS)];
       const judged = typeof move === 'number' && move !== 0 && Math.abs(signal) >= 0.05;
       const right = judged && Math.sign(move) === Math.sign(signal);
