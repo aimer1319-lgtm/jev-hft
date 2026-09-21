@@ -5,8 +5,12 @@ import type { Prices } from '../src/market/prices.ts';
 
 export type Step = 'ok' | 'rate-limit' | 'server-error' | 'bad-request';
 
-/** A model that answers the same way every time, after playing out a script of failures. */
-export function scriptedModel(script: Step[] = []) {
+/**
+ * A model that answers the same way every time, after playing out a script of failures.
+ * `route` picks which of the two real routes it imitates, because they report different things
+ * about a call: the gateway its own cost and timing, TypeSafe its build and service time.
+ */
+export function scriptedModel(script: Step[] = [], route: 'gateway' | 'typesafe' = 'gateway') {
   const calls: { state: unknown; questions: Record<string, { type: string; instructions: string }> }[] = [];
   const model: EvaluationModel = {
     specificationVersion: 'v4',
@@ -28,12 +32,19 @@ export function scriptedModel(script: Step[] = []) {
           return [id, { type: 'choice' as const, choice: keys[0]!, probabilities: Object.fromEntries(keys.map((k, i) => [k, i === 0 ? 0.8 : 0.1])) }];
         }),
       );
+      const confidence = { direction_0: 0.75, magnitude_0: 0.5 };
+      // The gateway prices and times the call from outside and echoes the route it was asked
+      // for; TypeSafe reports its own service time in a header and names the build that answered.
+      const asGateway = route === 'gateway';
       return {
         answers,
         warnings: [],
-        usage: { inputTokens: 600 },
-        providerMetadata: { typesafe: { confidence: { direction_0: 0.75, magnitude_0: 0.5 } }, gateway: { marketCost: '0.000025', routing: { modelAttempts: [{ providerAttempts: [{ startTime: 1000, endTime: 1120 }] }] } } },
-        response: { modelId: 'scripted' },
+        usage: { inputTokens: 600, ...(asGateway ? {} : { outputTokens: 42 }) },
+        providerMetadata: {
+          typesafe: { confidence },
+          ...(asGateway ? { gateway: { marketCost: '0.000025', routing: { modelAttempts: [{ providerAttempts: [{ startTime: 1000, endTime: 1120 }] }] } } } : {}),
+        },
+        response: asGateway ? { modelId: 'typesafe-ai/jev' } : { modelId: 'jev-1.13.0', headers: { 'x-envoy-upstream-service-time': '90' } },
       };
     },
   };

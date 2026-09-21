@@ -63,7 +63,8 @@ export const config = {
   product: process.env.PRODUCT || 'BTC-USD',
   /** Save the raw market events as well, so a live run can be replayed later (RECORD=1). */
   record: process.env.RECORD === '1',
-  provider: process.env.JEV_PROVIDER || 'gateway',
+  /** Which route to Jev: typesafe (direct, the fastest), gateway, or mock (src/model/jev.ts). */
+  provider: process.env.JEV_PROVIDER || 'typesafe',
   encoding: envChoice<Encoding>('JEV_ENCODING', 'compact', ['compact', 'json']),
   /**
    * Minimum spacing between market-data decisions. Asking back to back (0) gives about 2.7

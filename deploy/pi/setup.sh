@@ -94,9 +94,17 @@ else
 fi
 has_key() { [ -f .env ] && grep -qE "^$1=.+" .env; }
 provider="$( (grep -E '^JEV_PROVIDER=' .env 2>/dev/null || true) | tail -1 | cut -d= -f2- | tr -d '"')"
-# Saving market data and showing the dashboard never call Jev, so they need no gateway key.
-if [ "$SERVICE" != record ] && [ "$SERVICE" != dashboard ] && [ "${provider:-gateway}" = gateway ] && ! has_key AI_GATEWAY_API_KEY; then
-  if [ "$DRY_RUN" = 1 ]; then warn "AI_GATEWAY_API_KEY is missing from .env"; else fail "AI_GATEWAY_API_KEY is missing from .env; the pipeline can't reach Jev without it"; fi
+# Saving market data and showing the dashboard never call Jev, so they need no key for it.
+# Each route needs its own: TYPESAFE_AI_API_KEY by default, AI_GATEWAY_API_KEY for the gateway.
+if [ "$SERVICE" != record ] && [ "$SERVICE" != dashboard ]; then
+  case "${provider:-typesafe}" in
+    gateway) needed=AI_GATEWAY_API_KEY ;;
+    typesafe) needed=TYPESAFE_AI_API_KEY ;;
+    *) needed= ;;  # mock reaches no model at all
+  esac
+  if [ -n "$needed" ] && ! has_key "$needed"; then
+    if [ "$DRY_RUN" = 1 ]; then warn "$needed is missing from .env"; else fail "$needed is missing from .env; the pipeline can't reach Jev without it (JEV_PROVIDER=${provider:-typesafe})"; fi
+  fi
 fi
 if [ "$SERVICE" = news-live ]; then
   { has_key ALPACA_API_KEY_ID && has_key ALPACA_API_SECRET_KEY; } || warn "no Alpaca keys: no stock prices and no Benzinga news"

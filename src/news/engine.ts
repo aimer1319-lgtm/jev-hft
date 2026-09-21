@@ -39,10 +39,12 @@ export type NewsRecord = {
   tState: number;
   buildMs: number;
   modelMs: number;
-  providerMs?: number; // the part of modelMs the gateway spent waiting for TypeSafe
+  providerMs?: number; // the part of modelMs that was Jev itself; the rest is the network (and the gateway, on that route)
   tResp: number;
   inputTokens?: number; // for the whole call, shared by the item's instruments
   costUsd?: number; // list price of the whole call, shared by the item's instruments
+  /** Which build of Jev answered ("jev-1.13.0"), when the route says. Only the direct API does. */
+  modelVersion?: string;
   instruments: number; // how many instruments shared the call
   state: ReturnType<typeof newsState>;
   relevant: number; // P(yes)
@@ -275,6 +277,7 @@ export class NewsEngine {
           buildMs: tBuilt - tState,
           modelMs: tResp - tBuilt,
           ...(res.meta.providerMs !== undefined ? { providerMs: res.meta.providerMs } : {}),
+          ...(res.meta.modelVersion !== undefined ? { modelVersion: res.meta.modelVersion } : {}),
           tResp,
           ...(res.meta.inputTokens !== undefined ? { inputTokens: res.meta.inputTokens } : {}),
           ...(res.meta.costUsd !== undefined ? { costUsd: res.meta.costUsd } : {}),

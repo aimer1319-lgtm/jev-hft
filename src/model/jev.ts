@@ -2,8 +2,11 @@
 // shared by the market-data path (`decide`, below) and the news path (src/news).
 //
 // JEV_PROVIDER selects the route:
-//   gateway  (default) Vercel AI Gateway, model AI_GATEWAY_MODEL (default typesafe-ai/jev)
-//   typesafe           TypeSafe API directly (TYPESAFE_AI_API_KEY); skips the gateway hop
+//   typesafe (default) TypeSafe's own API (TYPESAFE_AI_API_KEY). Half the round trip of the
+//                      gateway, because there is no extra hop: 122 ms against 255 ms (D52).
+//   gateway            Vercel AI Gateway (AI_GATEWAY_API_KEY), model AI_GATEWAY_MODEL
+//                      (default typesafe-ai/jev). Useful for billing in one place, or to
+//                      compare the two routes.
 //   mock               random answers after MOCK_LATENCY_MS; exercises the pipeline for free
 
 import { createGateway } from '@ai-sdk/gateway';
@@ -19,7 +22,7 @@ import { envNum } from '../config.ts';
 
 // ---- connection --------------------------------------------------------------------
 //
-// Node closes an idle connection after 4 seconds, and the gateway closes one after 30 to 60.
+// Node closes an idle connection after 4 seconds, and the far end closes one after 30 to 60.
 // News calls are minutes apart, so without help every one of them would first spend about
 // 100 ms opening a new encrypted connection. Jev calls therefore get their own connection
 // pool that keeps idle connections for 25 seconds, and `keepWarm` makes a tiny request every
@@ -63,7 +66,7 @@ export function keepWarm(provider: string, log: (s: string) => void): () => void
 /** Close idle connections so a finished program can exit. */
 export const closeConnections = () => dispatcher.close();
 
-export function createModel(provider = process.env.JEV_PROVIDER || 'gateway'): EvaluationModel {
+export function createModel(provider = process.env.JEV_PROVIDER || 'typesafe'): EvaluationModel {
   switch (provider) {
     case 'gateway':
       return createGateway({ fetch: jevFetch }).evaluationModel(process.env.AI_GATEWAY_MODEL || 'typesafe-ai/jev');
@@ -104,30 +107,66 @@ export function isTransient(error: unknown) {
 /** Facts about one call that come back alongside the answers. */
 export type CallMeta = {
   inputTokens?: number;
-  /** List price of the call in dollars, as reported by the gateway (the free tier does not charge it). */
+  outputTokens?: number;
+  /**
+   * What the call cost at list price. The gateway reports this itself; TypeSafe's own API does
+   * not, so there it is worked out from the tokens at `JEV_USD_PER_MTOK`.
+   */
   costUsd?: number;
-  /** How long the gateway waited for TypeSafe. The rest of the round trip is network and gateway. */
+  /**
+   * How long Jev itself took, leaving the network (and, on the gateway route, the gateway) as the
+   * rest of the round trip. The gateway reports how long it waited for TypeSafe; TypeSafe's own
+   * API reports its service time in a header.
+   */
   providerMs?: number;
   /** TypeSafe's confidence in each choice or score answer, by question id. */
   confidence?: Record<string, number>;
+  /** Which build of Jev answered, when the route says: the direct API does, the gateway does not. */
+  modelVersion?: string;
 };
 
 type EvaluationState = Parameters<typeof experimental_evaluate>[0]['state'];
+type EvaluationResult = Awaited<ReturnType<typeof experimental_evaluate>>;
 
 type GatewayMetadata = {
   marketCost?: string;
   routing?: { modelAttempts?: { providerAttempts?: { startTime?: number; endTime?: number; success?: boolean }[] }[] };
 };
 
-function callMeta(inputTokens: number | undefined, providerMetadata: unknown): CallMeta {
-  const md = (providerMetadata ?? {}) as { typesafe?: { confidence?: Record<string, number> }; gateway?: GatewayMetadata };
+/**
+ * List price per million input tokens, used only when the route doesn't report a cost. Measured
+ * against the gateway's own figures over 30,000 calls, which came to $0.042 per million to the
+ * cent. Set `JEV_USD_PER_MTOK` if TypeSafe bills you at a different rate.
+ */
+const USD_PER_MTOK = envNum('JEV_USD_PER_MTOK', 0.042, { min: 0 });
+
+/**
+ * TypeSafe's own API resolves "jev-latest" to the build that actually answered ("jev-1.13.0").
+ * The gateway echoes the route it was asked for ("typesafe-ai/jev"), and the practice model names
+ * itself, neither of which is a version. Keep only a real one, so no record claims to know which
+ * build answered when it was never told.
+ */
+const modelVersion = (id: string | undefined) => (id && /\d/.test(id) && !/[/\s]/.test(id) ? id : undefined);
+
+function callMeta(result: EvaluationResult): CallMeta {
+  const md = (result.providerMetadata ?? {}) as { typesafe?: { confidence?: Record<string, number> }; gateway?: GatewayMetadata };
+  const { inputTokens, outputTokens } = result.usage;
   const attempt = md.gateway?.routing?.modelAttempts?.at(-1)?.providerAttempts?.at(-1);
-  const cost = Number(md.gateway?.marketCost);
+  // The gateway's own accounting, or ours from the tokens when the route keeps no account.
+  const reported = Number(md.gateway?.marketCost);
+  const cost = Number.isFinite(reported) ? reported : inputTokens === undefined ? NaN : (inputTokens * USD_PER_MTOK) / 1e6;
+  // The gateway times TypeSafe from outside; TypeSafe times itself and says so in a header.
+  const service = Number(result.response.headers?.['x-envoy-upstream-service-time']);
+  const gatewayMs = attempt?.startTime && attempt.endTime ? attempt.endTime - attempt.startTime : NaN;
+  const providerMs = Number.isFinite(gatewayMs) ? gatewayMs : service;
+  const version = modelVersion(result.response.modelId);
   return {
     ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
     ...(Number.isFinite(cost) ? { costUsd: cost } : {}),
-    ...(attempt?.startTime && attempt.endTime ? { providerMs: attempt.endTime - attempt.startTime } : {}),
+    ...(Number.isFinite(providerMs) ? { providerMs } : {}),
     ...(md.typesafe?.confidence ? { confidence: md.typesafe.confidence } : {}),
+    ...(version ? { modelVersion: version } : {}),
   };
 }
 
@@ -140,7 +179,7 @@ export async function ask<const Q extends Record<string, Question>>(
 ) {
   try {
     const result = await experimental_evaluate({ model, state, questions, maxRetries: 0, abortSignal });
-    return { answers: result.answers, meta: callMeta(result.usage.inputTokens, result.providerMetadata) };
+    return { answers: result.answers, meta: callMeta(result) };
   } catch (error) {
     if ((error as { statusCode?: number }).statusCode === 429) throw new RateLimitedError((error as Error).message);
     throw error;

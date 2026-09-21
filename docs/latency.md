@@ -5,8 +5,9 @@ squeezing it into a form the model can read. Measuring every step showed otherwi
 part is the round trip to Jev.** For news, an even bigger delay comes first: how long it takes
 to notice that something was published at all.
 
-All numbers below were measured on 2026-09-19 from a laptop on a US West Coast home internet
-connection, using Bitcoin data from Coinbase during a quiet weekend market. Re-measure before
+All numbers below were measured from a laptop on a US West Coast home internet connection, using
+Bitcoin data from Coinbase during a quiet weekend market: the gateway ones on 2026-09-19, the
+direct ones on 2026-09-21 when the route changed (D52). Re-measure before
 relying on them in a different setup (`npm run bench`, and the reports print the same breakdown
 for any run).
 
@@ -21,40 +22,53 @@ we summarize it, and Jev answers.
 | Coinbase to our machine over the internet | 32 ms | when the message arrived vs when Coinbase sent it |
 | Processing one market update | 0.02 to 0.05 ms | timed around the code that applies each update |
 | Measuring the market and writing Jev's text | 0.25 to 0.6 ms | recorded with every decision |
-| **Jev's answer through the gateway** | **about 260 ms** (slow case about 320 ms) | timed on our side, on an already-open connection |
-| **Total** | **about 0.37 seconds** (slow case 0.49) | the "exchange event -> decision" line in the report |
+| **Jev's answer, straight to TypeSafe** | **about 130 ms** (slow case about 190 ms) | timed on our side, on an already-open connection |
+| **Total** | **about 0.24 seconds** | the "exchange event -> decision" line in the report |
 
-Two things stand out. The model's round trip is several times longer than the market data's
+Through the gateway, Jev's answer took about 260 ms and the total about 0.37 s. Going direct
+halved the model's part and took a third off the whole chain (D52).
+
+Two things stand out. The model's round trip is still several times longer than the market data's
 journey, and about a thousand times longer than all our own processing. And the 47 to 85 ms that
 Coinbase holds updates before sending them can't be avoided by anyone using its free public
-feed; only the 32 ms internet trip would shrink if the machine were closer to Coinbase.
+feed; only the 32 ms internet trip would shrink if the machine were closer to Coinbase. Now that
+the gateway hop is gone, Coinbase's own delay and Jev's thinking are the same order of size.
 
 ## Inside the Jev round trip
 
-A request goes from our machine to Vercel's nearest server (San Francisco), then to the
-gateway's main servers (Cleveland), then to TypeSafe (US West Coast), and all the way back.
+There are two possible routes, and the difference between them was the biggest saving available
+anywhere in the chain.
 
-| Measurement | Typical time | What it shows |
+**Straight to TypeSafe** (the default): our machine to TypeSafe's servers and back.
+**Through the gateway:** our machine to Vercel's nearest server (San Francisco), then to the
+gateway's main servers (Cleveland), then to TypeSafe, and all the way back.
+
+Measured on the same questions, interleaved a minute apart so both saw the same network:
+
+| Measurement | Direct | Through the gateway |
 |---|---|---|
-| A request for a model that doesn't exist (the gateway rejects it immediately) | 95 ms | just the trip to the gateway and back |
-| The gateway's own record of how long it waited for TypeSafe | 160 ms | gateway to TypeSafe and back, including Jev's thinking time |
-| A full successful request | 257 ms (slow case 318 ms) | everything |
-| The same request on a brand-new connection | 360 ms | about 100 ms extra to connect and set up encryption |
-| A request straight to TypeSafe's own servers, refused for having no key | 40 ms | the network trip we would have without the gateway |
+| A full successful request, warm connection | **122 ms** | **255 ms** |
+| A request turned down before any model runs | 57 ms | 94 ms |
+| Jev's own time, as the route reports it | 105 ms | 170 ms |
+| The same request on a brand-new connection | 226 ms | 323 ms |
 
-Put together: about 95 ms to reach the gateway and come back, and about 160 ms for the gateway to
-get an answer from TypeSafe. Roughly 60 ms of that second part is the Cleveland to West Coast
-trip, which leaves about 100 ms for Jev itself. That matches TypeSafe's published claim that most
-requests take about 100 ms. **So more than half of the round trip is the route, not the model.**
+The two "Jev's own time" figures aren't measuring quite the same thing: the gateway times
+TypeSafe from Cleveland, so its 170 ms includes a leg of network, while TypeSafe's own header
+times only itself. The direct route's 105 ms matches TypeSafe's published claim of about 100 ms
+per request, and it is the honest floor for this model.
 
-Every record stores both numbers (`modelMs` for the whole round trip, `providerMs` for
-TypeSafe's part as the gateway reports it), so the reports show this split for any run.
+So the gateway was adding roughly 130 ms, nearly all of it geography: a question from California
+went to Cleveland and back before a model ever saw it. Removing that hop is what
+[D52](decisions.md) did.
 
-We measured the same thing twice on the same day and got different totals: about 370 ms in the
-early hours, when the account was on the gateway's rate-limited free tier, and about 260 ms in
-the evening, after the account had credits. TypeSafe's part was the same both times (150 to
-160 ms); the gateway's own part shrank. We can't tell from outside whether that was the free
-tier's extra checks or simply the time of day.
+Every record stores both numbers (`modelMs` for the whole round trip, `providerMs` for Jev's own
+time as the route reports it), so the reports show this split for any run.
+
+We measured the gateway twice on the same day and got different totals: about 370 ms in the
+early hours, when the account was on its rate-limited free tier, and about 260 ms in the evening,
+after the account had credits. TypeSafe's part was the same both times (150 to 160 ms); the
+gateway's own part shrank. We couldn't tell from outside whether that was the free tier's extra
+checks or simply the time of day.
 
 ## Keeping the connection open
 
@@ -76,9 +90,9 @@ Two details that took a while to find and are worth knowing:
 - The tiny request must be a `GET`. Node's HTTP client deliberately closes the connection after
   every `HEAD` request, which would do the opposite of what we want.
 - It goes to the same address as real Jev calls and is refused instantly ("405 method not
-  allowed"). It carries no key, reaches no model, and costs nothing. Requests to addresses the
-  gateway doesn't know are answered with an instruction to close the connection, so those can't
-  be used either.
+  allowed"). It carries no key, reaches no model, and costs nothing. This works on both routes.
+  Requests to addresses the gateway doesn't know are answered with an instruction to close the
+  connection, so those can't be used either.
 
 ## Noticing news
 
@@ -123,11 +137,11 @@ search. A search that finds nothing costs nothing.
 
 1. **Our own code doesn't need to be faster.** It's a tiny fraction of the total, which is why
    the project is simple single-threaded TypeScript.
-2. **The biggest time saving available is skipping the gateway.** TypeSafe's own servers answer
-   us in about 40 ms, against 95 ms for the gateway's fastest possible reply. Calling TypeSafe
-   directly (`JEV_PROVIDER=typesafe`) should bring a decision down to about 150 ms. This hasn't
-   been tried, because it needs a separate TypeSafe API key. At that point, Coinbase's own
-   sending delay would matter about as much as the model.
+2. **The biggest time saving available was skipping the gateway, and it has been taken.**
+   Calling TypeSafe directly brought a decision from about 260 ms down to about 130 ms. Coinbase's
+   own sending delay now matters about as much as the model. What's left to save is small by
+   comparison: a machine closer to TypeSafe would shave part of the 41 ms round trip, and nothing
+   at all can be done about Coinbase's 47 to 85 ms.
 3. **This isn't high-frequency trading.** Even the fastest route gives decisions about 0.2
    seconds after something happens. High-frequency firms react in millionths of a second. This
    project aims at horizons from seconds to minutes.
@@ -139,6 +153,10 @@ search. A search that finds nothing costs nothing.
    waiting for Jev.
 
 ## Rate limits
+
+Going straight to TypeSafe we have seen no limit: the benchmark's roughly 170 requests in a row,
+and the live pipeline at one a second, without a refusal. Both engines still treat a refusal as
+"slow down", so either route behaves sensibly if one appears.
 
 An AI Gateway account **without credits** is limited to about 5 Jev requests every 5 minutes. We
 found this by sending one request every 4 seconds for 15 minutes: exactly five succeeded in a
@@ -154,9 +172,12 @@ so the pipeline behaves sensibly on either kind of account.
 
 ## Costs
 
-Jev charges $0.042 per million input tokens; its answers are free. The gateway reports what each
-call costs, and every record stores it (`costUsd`), so reports and status lines show real totals
-rather than estimates.
+Jev charges $0.042 per million input tokens; its answers are free. Every record stores what the
+call cost (`costUsd`). Through the gateway that figure is the gateway's own; going direct,
+TypeSafe's API reports no price, so it is worked out from the tokens at `JEV_USD_PER_MTOK`
+(default $0.042 per million). That rate reproduced the gateway's own figures to the cent across
+30,000 calls, but it is our arithmetic rather than a bill, so check it against what TypeSafe
+charges you.
 
 What a call costs, in tokens:
 
@@ -178,8 +199,8 @@ lines of context to a news item is nearly free.
 
 ## Measuring again
 
-- `npm run bench` measures the gateway round trip in detail, including TypeSafe's part
-  ([benchmark.md](benchmark.md)).
+- `npm run bench` measures both routes in detail and prints them side by side, which is how the
+  choice between them was made ([benchmark.md](benchmark.md)).
 - `npm run live` prints the market-data delay, processing time, and running cost every 10
   seconds, and `npm run analyze` prints the full chain for a finished run.
 - `npm run analyze:news` prints how long each source took to reach us and how long Jev took.

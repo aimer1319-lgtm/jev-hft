@@ -21,10 +21,13 @@ export type DecisionRecord = {
   exchLagMs: number; // tState minus exchange time of the newest event in the state
   buildMs: number; // features + encoding
   modelMs: number; // model round trip (backtest: simulated)
-  providerMs?: number; // the part of modelMs the gateway spent waiting for TypeSafe
+  providerMs?: number; // the part of modelMs that was Jev itself; the rest is the network (and the gateway, on that route)
   tResp: number; // decision available to act on
   inputTokens?: number;
+  outputTokens?: number;
   costUsd?: number; // list price of the call
+  /** Which build of Jev answered ("jev-1.13.0"), when the route says. Only the direct API does. */
+  modelVersion?: string;
   state: string;
   /** The move that counted as "flat" in each question (v2; before that, the fixed DIRECTIONS values). */
   flatBps?: FlatThresholds;
@@ -65,7 +68,9 @@ export function answerFields(res: ModelResult, f: Features, flat: FlatThresholds
   return {
     ...(res.meta.providerMs !== undefined ? { providerMs: res.meta.providerMs } : {}),
     ...(res.meta.inputTokens !== undefined ? { inputTokens: res.meta.inputTokens } : {}),
+    ...(res.meta.outputTokens !== undefined ? { outputTokens: res.meta.outputTokens } : {}),
     ...(res.meta.costUsd !== undefined ? { costUsd: res.meta.costUsd } : {}),
+    ...(res.meta.modelVersion !== undefined ? { modelVersion: res.meta.modelVersion } : {}),
     flatBps: flat,
     probabilities: res.probabilities,
     ...(res.meta.confidence ? { confidence: res.meta.confidence } : {}),

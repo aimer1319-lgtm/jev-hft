@@ -65,7 +65,19 @@ test('a call returns the answers with what the gateway reported about it', async
   const { model } = scriptedModel();
   const res = await ask(model, 'state', { q: { type: 'boolean', instructions: 'x?' } });
   assert.equal(res.answers.q.probability, 0.9);
+  assert.equal(res.meta.modelVersion, undefined, 'the gateway echoes the route asked for, which is not a build');
   assert.deepEqual(res.meta, { inputTokens: 600, costUsd: 0.000025, providerMs: 120, confidence: { direction_0: 0.75, magnitude_0: 0.5 } });
+});
+
+test('going straight to TypeSafe, the same facts come from the call itself', async () => {
+  const { model } = scriptedModel([], 'typesafe');
+  const res = await ask(model, 'state', { q: { type: 'boolean', instructions: 'x?' } });
+  assert.equal(res.meta.providerMs, 90, 'its own service time, from the header');
+  assert.equal(res.meta.modelVersion, 'jev-1.13.0', 'which build answered');
+  assert.equal(res.meta.outputTokens, 42);
+  // Nothing reports a price on this route, so it is worked out: 600 tokens at $0.042 a million.
+  assert.ok(Math.abs(res.meta.costUsd! - (600 * 0.042) / 1e6) < 1e-12, `got ${res.meta.costUsd}`);
+  assert.deepEqual(res.meta.confidence, { direction_0: 0.75, magnitude_0: 0.5 }, 'confidence survives the move');
 });
 
 test('a rate-limit refusal is told apart from other failures, and nothing is retried', async () => {

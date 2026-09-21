@@ -62,7 +62,11 @@ for (const r of recs) calls.set(`${r.item.id}|${r.tState}`, r);
 const costs = [...calls.values()].map(r => num(r.costUsd)).filter(Number.isFinite); // older records have none
 const cost = costs.reduce((a, b) => a + b, 0);
 
-console.log(`${recs.length} news decisions (one per item and instrument) from ${calls.size} model calls in ${files.length} file(s)`);
+const builds = [...new Set(recs.map(r => r.modelVersion).filter(Boolean))];
+console.log(
+  `${recs.length} news decisions (one per item and instrument) from ${calls.size} model calls in ${files.length} file(s)` +
+    (builds.length ? `; Jev ${builds.join(', ')}` : ''),
+);
 console.log(`sources: ${[...bySource].map(([s, n]) => `${s} ${n}`).join(', ')}`);
 console.log(
   `instruments: ${count(recs, r => r.assetClass)}; stock sessions: ${count(recs.filter(r => r.assetClass === 'equity'), r => r.session) || '-'}; ` +
@@ -85,7 +89,8 @@ for (const source of bySource.keys()) {
 line('queue wait (rate limits, retries)', perCall.map(r => r.queueMs / 1000), 's');
 line('getting prices ready', perCall.map(r => r.prepareMs), 'ms', 0);
 line('model round trip', perCall.map(r => r.modelMs), 'ms', 0);
-line('  of which: TypeSafe (per gateway)', perCall.map(r => num(r.providerMs)), 'ms', 0);
+line('  of which: Jev itself (reported)', perCall.map(r => num(r.providerMs)), 'ms', 0);
+line(`  of which: ${new Set(recs.map(r => r.provider)).has('gateway') ? 'network + gateway' : 'network'}`, perCall.map(r => r.modelMs - num(r.providerMs)), 'ms', 0);
 console.log('  publish times are what the feed claims (often minute precision), so treat them as bounds\n');
 
 /** Separate events: the same instrument's records count once per horizon-length stretch of time. */

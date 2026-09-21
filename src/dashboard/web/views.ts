@@ -95,6 +95,12 @@ function probHtml(p: Record<string, number> | undefined, mini = false) {
   return `<div class="prob${mini ? ' mini' : ''}">${part('p-down', p?.down ?? 0)}${part('p-flat', p?.flat ?? 0)}${part('p-up', p?.up ?? 0)}</div>`;
 }
 
+/**
+ * What the part of the round trip that isn't Jev consists of. Going straight to TypeSafe it is
+ * only the network; through the gateway it is the network and the gateway's own hop.
+ */
+const routeLabel = (provider: string | undefined) => (provider === 'gateway' ? 'network + gateway' : 'network');
+
 export function renderLatestAnswer(state: DashboardState, msSince: (t: number) => number) {
   const d = state.live.decisions.findLast(x => x.answer);
   if (!d?.answer) return;
@@ -132,6 +138,7 @@ export function renderLatestAnswer(state: DashboardState, msSince: (t: number) =
   $('split-model').style.flexBasis = model === null ? '0%' : `${(model / a.modelMs) * 100}%`;
   $('split-route').style.flexBasis = model === null ? '100%' : `${((route ?? 0) / a.modelMs) * 100}%`;
   setText($('split-model-ms'), f.ms(model));
+  setText($('split-route-label'), routeLabel(state.live.pulse?.meta.provider));
   setText($('split-route-ms'), f.ms(route));
   setText($('split-tokens'), f.int(a.inputTokens));
   setText($('split-cost'), f.usd(a.costUsd, 6));
@@ -222,6 +229,7 @@ export function renderLatency(state: DashboardState) {
   setText($('bud-handle'), Number.isFinite(handle) ? `${handle.toFixed(2)} ms` : '—');
   setText($('bud-jev'), f.ms(jev));
   setText($('bud-model'), f.ms(model));
+  setText($('bud-route-label'), `of which ${routeLabel(pulse?.meta.provider)}`);
   setText($('bud-route'), f.ms(route));
   setText($('bud-total'), f.ms(lag + (Number.isFinite(handle) ? handle : 0) + jev));
 }

@@ -601,3 +601,37 @@ less. "Average per stake" is now worked out per unit staked for the same reason.
 **What to keep in mind:** most of this rule's accuracy is the order book's. The book alone is
 right about two times in three at 2 seconds; Jev's agreement adds a few points. That is an honest
 measure of what Jev contributes on market data, and it matches everything else found so far.
+
+## D52. Jev is called directly, not through the gateway
+
+**Chosen:** `JEV_PROVIDER` now defaults to `typesafe`, so every call goes straight to TypeSafe's
+own API with `TYPESAFE_AI_API_KEY`. The gateway route stays in the code, is still tested, and is
+still benchmarked beside the direct one.
+
+**Why:** it halves the wait. Measured on the same questions from the same machine, interleaved a
+minute apart: **122 ms against 255 ms**, and in the live pipeline a decision's round trip fell
+from about 260 ms to about 130 ms. Most of what the gateway added was geography, not work — it
+runs in Cleveland and we are in California, so each question crossed the country twice for
+nothing. This was the single biggest delay in the whole chain, and the only one we could remove
+(Coinbase's own 47 to 85 ms of batching is not ours to change).
+
+**What we gave up, and what we did about it:**
+
+- **The gateway priced every call.** TypeSafe's API doesn't, so a call's cost is now worked out
+  from its tokens at `JEV_USD_PER_MTOK`, default $0.042 per million input tokens. That rate
+  reproduces the gateway's own figures to the cent over the 30,000 calls we have, but it is our
+  arithmetic against their list price, not a bill. If TypeSafe charges differently, one setting
+  fixes every report.
+- **One key and one bill across providers.** Only Jev is used here, so there was little to lose.
+
+**What we gained beyond speed:** TypeSafe names the build that answered (`jev-1.13.0`), which the
+gateway never did. That now goes in every record and prints at the top of the reports, so a run
+from one day can be compared with another knowing whether the model changed underneath. It also
+reports its own service time in a header, which is a cleaner measure of Jev's thinking than the
+gateway's figure ever was: the gateway timed TypeSafe from Cleveland, so its number always had a
+leg of network inside it.
+
+**Why the gateway route stays:** it is the only way to compare the two, and the comparison is the
+evidence for this decision. Keeping both also means a bad day at either one is a setting away
+from being worked around. `npm run bench` runs both by default and prints them side by side, so
+the claim above can be rechecked whenever the network or either service changes.

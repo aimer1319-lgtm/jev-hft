@@ -31,7 +31,14 @@ fillLeans([...recs].sort((a, b) => a.tResp - b.tResp));
 const fmt = (x: number, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : '-');
 const pad = (s: string | number, n: number) => String(s).padStart(n);
 
-console.log(`${recs.length} decisions from ${files.length} file(s); modes: ${[...new Set(recs.map(r => `${r.mode}/${r.provider}`))].join(', ')}`);
+const routes = new Set(recs.map(r => r.provider));
+// Which build of Jev answered. Only the direct API says, so a gateway run shows none.
+const builds = [...new Set(recs.map(r => r.modelVersion).filter(Boolean))];
+console.log(
+  `${recs.length} decisions from ${files.length} file(s); modes: ${[...new Set(recs.map(r => `${r.mode}/${r.provider}`))].join(', ')}` +
+    (builds.length ? `; Jev ${builds.join(', ')}` : ''),
+);
+if (builds.length > 1) console.log('  more than one build of Jev answered in this run, so its parts are not strictly comparable');
 const gaps = recs.slice(1).map((r, i) => r.tState - recs[i]!.tState);
 // Time actually covered: pauses longer than five minutes (rate limits, separate runs) are not counted.
 const coveredS = gaps.filter(g => g < 5 * 60_000).reduce((a, b) => a + b, 0) / 1000;
@@ -51,8 +58,10 @@ const row = (name: string, xs: number[], d = 1) => {
 row('age of newest data at decision', recs.map(r => r.exchLagMs));
 row('features + encoding', recs.map(r => r.buildMs), 3);
 row(`model round trip${recs[0]!.mode === 'backtest' ? ' (simulated)' : ''}`, recs.map(r => r.modelMs));
-row('  of which: TypeSafe (per gateway)', recs.map(r => num(r.providerMs)));
-row('  of which: network + gateway', recs.map(r => r.modelMs - num(r.providerMs)));
+// Jev's own time is reported by whichever route was used; the rest of the round trip is what
+// getting there and back cost, which is where the gateway route spends its extra hop.
+row('  of which: Jev itself (reported)', recs.map(r => num(r.providerMs)));
+row(`  of which: ${routes.has('gateway') ? 'network + gateway' : 'network'}`, recs.map(r => r.modelMs - num(r.providerMs)));
 row('exchange event -> decision', recs.map(r => r.exchLagMs + r.buildMs + r.modelMs));
 console.log('');
 

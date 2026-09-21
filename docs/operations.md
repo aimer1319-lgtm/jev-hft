@@ -44,14 +44,15 @@ program with a clear message.
 | `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY` | Alpaca keys: stock prices and the Benzinga news stream |
 | `X_BEARER_TOKEN` | X API read-only key |
 | `NEWS_USER_AGENT` | your name and email, required by the SEC for its filing feed and company list |
-| `TYPESAFE_AI_API_KEY` | only for going straight to TypeSafe (`JEV_PROVIDER=typesafe`) |
+| `TYPESAFE_AI_API_KEY` | the key for the default route, straight to TypeSafe |
 
 **General**
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `JEV_PROVIDER` | `gateway` | `gateway`, `typesafe` (direct), or `mock` (free random answers) |
-| `AI_GATEWAY_MODEL` | `typesafe-ai/jev` | the model's name on the gateway |
+| `JEV_PROVIDER` | `typesafe` | `typesafe` (straight to TypeSafe, half the delay), `gateway`, or `mock` (free random answers) |
+| `AI_GATEWAY_MODEL` | `typesafe-ai/jev` | the model's name on the gateway, for `JEV_PROVIDER=gateway` |
+| `JEV_USD_PER_MTOK` | `0.042` | list price per million input tokens, used to work out what a call cost when the route doesn't say. The gateway reports its own figure and ignores this |
 | `MOCK_LATENCY_MS` | `375` | how long the mock takes to answer |
 | `RUN_MINUTES` | `0` | stop after this many minutes (0 means run until stopped) |
 | `FEE_BPS` | `0` | round-trip trading cost used by the reports and by the dashboard's profit and loss. Zero shows what the moves alone were worth; set it to what your broker charges to see what survives |
@@ -158,6 +159,7 @@ account without credits the two copies would share the same few calls.
 | What you see | Why | What to do |
 |---|---|---|
 | "Free tier requests on this model are rate-limited" / many `429s` | the gateway account has no credits | add gateway credits, or ask less often; the engines already slow down by themselves |
+| `Failed to load TypeSafe API key` | `TYPESAFE_AI_API_KEY` missing from `.env` | add it, or set `JEV_PROVIDER=gateway` to use the other route |
 | `GatewayAuthenticationError` | `AI_GATEWAY_API_KEY` missing from `.env`, or no longer valid | add it; if it was revoked, create a new one with `vercel ai-gateway api-keys create` |
 | `model call failed (...); trying again in 2s` | a timeout or a hiccup at the gateway | nothing; news items are tried up to three times |
 | `model error, item lost: ...` | three failures in a row, or the request was rejected outright | check the message; a rejected key or an SDK change needs fixing, a bad day at the gateway doesn't |

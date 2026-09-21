@@ -31,8 +31,9 @@ a separate program that the pipeline never waits for, so watching costs the pipe
 
 ## What we've found so far
 
-- **Speed:** Jev answers in about a quarter of a second through the gateway. More than half of
-  that is the route, not the model; going straight to TypeSafe would roughly halve it.
+- **Speed:** Jev answers in about 130 ms, going straight to TypeSafe. Through Vercel's AI
+  Gateway it was about 260 ms: most of the difference was geography, not thinking, so the
+  gateway hop was dropped.
 - **The market-data part has a cost problem:** over a few seconds Bitcoin barely moves, so even
   perfect predictions would earn less than trading fees. That's why the news part exists.
 - **On market data, Jev doesn't beat a one-line rule:** over a nine-hour live run its calls had a

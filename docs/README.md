@@ -39,9 +39,10 @@ check later whether Jev's judgments were right, and whether they arrived fast en
 
 ### What we've learned so far
 
-- **Speed:** a Jev answer takes about a quarter of a second to come back through the gateway
-  (260 ms typical). More than half of that is the route, not Jev itself, and going straight to
-  TypeSafe would roughly halve it (see [latency.md](latency.md)).
+- **Speed:** a Jev answer takes about 130 ms, going straight to TypeSafe. Through Vercel's AI
+  Gateway it took about 260 ms; most of that extra was the trip to Cleveland and back rather
+  than the model, so the pipeline now calls TypeSafe directly (see [latency.md](latency.md)).
+  About 105 ms of what is left is Jev's own thinking, which is the floor for this model.
 - **For news, noticing is slower than judging.** Most sources have to be checked on a timer, so
   several seconds pass before we even see an item. Only the newswire is pushed to us.
 - **The market-data path has a cost problem:** over seconds, Bitcoin's price barely moves.
@@ -143,7 +144,7 @@ src/
   market/quotes.ts      price and spread history for each stock
   market/prices.ts      one way to ask "what did this cost at time t?" for Bitcoin and stocks alike
   market/sessions.ts    US market hours, in New York time
-  model/jev.ts          how we call Jev, its connection, the market-data questions, and the mock model
+  model/jev.ts          how we call Jev (either route), its connection, the market-data questions, and the mock model
   model/lean.ts         reading Jev's lean against what it usually says, which is what gets acted on
   engine.ts             the live loop of the market-data path and its record format
   live.ts               runs the market-data path live
@@ -177,7 +178,7 @@ src/
   dashboard/outcomes.ts scores finished decisions: what happened next, Jev against the simple rules
   dashboard/web/        the page itself: TypeScript, hand-drawn charts, no framework and no build step
 test/                   the tests, and stand-ins for the model, prices, and clock (see testing.md)
-bench/latency.ts        measures Jev's response time through the gateway
+bench/latency.ts        measures Jev's response time on either route, side by side
 examples/triage.ts      the smallest possible Jev example
 deploy/pi/              Raspberry Pi setup script and background service (see deploy/pi/README.md)
 .github/workflows/      runs the type check and the tests on GitHub after every push

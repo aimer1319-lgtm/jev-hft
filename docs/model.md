@@ -55,16 +55,37 @@ version. `ask()` is the only place that would need updating.
 
 | `JEV_PROVIDER` | Route |
 |---|---|
-| `gateway` (default) | through Vercel AI Gateway, using `AI_GATEWAY_API_KEY` and model `typesafe-ai/jev` |
-| `typesafe` | straight to TypeSafe's own API, using `TYPESAFE_AI_API_KEY` |
+| `typesafe` (default) | straight to TypeSafe's own API, using `TYPESAFE_AI_API_KEY` |
+| `gateway` | through Vercel AI Gateway, using `AI_GATEWAY_API_KEY` and model `typesafe-ai/jev` |
 | `mock` | no network at all: random answers after a realistic delay |
 
-**Why the gateway is the default:** the project was set up around it: one key, one bill, one
-dashboard. **Why the direct route exists:** more than half of the gateway's round trip is the
-route rather than the model (see [latency.md](latency.md)), so going direct is the biggest
-speed-up available: TypeSafe's servers answer us in about 40 ms, which points to decisions in
-about 150 ms instead of 260. It hasn't been tested yet because it needs a TypeSafe key. Switching
-is one setting; nothing else in the code changes.
+**Why direct is the default:** it is half the wait. Most of the gateway's round trip was the
+trip, not the thinking: the gateway runs in Cleveland and we are in California, so every question
+went the long way round. Measured on the same questions, one minute apart:
+
+| | Round trip | Of which Jev itself |
+|---|---|---|
+| Straight to TypeSafe | 122 ms | 105 ms |
+| Through the gateway | 255 ms | 170 ms |
+
+Jev's own share is lower too, which is worth knowing: the gateway's figure counted its wait for
+TypeSafe from Cleveland, so it always included a leg of network. Only the direct figure is the
+model's own time.
+
+**What the gateway was giving us**, and what happens to it:
+
+- **It priced every call.** TypeSafe's API doesn't, so a call's cost is now worked out from its
+  tokens at `JEV_USD_PER_MTOK` (default $0.042 per million input tokens). That rate matched the
+  gateway's own figures to the cent over 30,000 calls, but it is our arithmetic rather than a
+  bill, so check it against what TypeSafe actually charges you.
+- **One key and one bill** for any model. Only Jev is used here, so there is little to lose.
+
+**What going direct adds:** TypeSafe names the build that answered (`jev-1.13.0`), which the
+gateway never did — worth having when a run from one day is compared with another. It also
+reports its own service time, and its usage figures include output tokens.
+
+Switching back is one setting; nothing else in the code changes, and both routes are kept working
+and benchmarked side by side (`npm run bench`).
 
 ## Keeping the connection open
 
