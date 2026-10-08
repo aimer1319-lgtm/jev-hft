@@ -6,3 +6,4 @@ data/
 *.log
 .vercel
 .env*
+logs/
