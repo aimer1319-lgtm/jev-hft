@@ -78,6 +78,12 @@ export type NewsEngineOptions = {
   onlyTradable: boolean;
   /** A stock quote wider than this is not a usable price. */
   maxSpreadBps: number;
+  /**
+   * With `onlyTradable`, the US sessions in which stocks are asked about. Outside regular hours
+   * the free quote feed is thin, so a stock's price can sit unchanged for minutes and a move
+   * reads as zero. Default: every session the market is open.
+   */
+  equitySessions?: Session[];
   /** Full company name for a ticker, when known. */
   companyName?: (ticker: string) => string | undefined;
   /** The clock (tests replace it). */
@@ -139,7 +145,7 @@ export class NewsEngine {
 
   onItem(item: NewsItem) {
     this.stats.received++;
-    const symbols = route(item, this.opts.maxSymbolsPerItem, this.opts.untagged);
+    const symbols = route(item, this.opts.maxSymbolsPerItem, this.opts.untagged, this.opts.companyName);
     if (symbols.length === 0) {
       this.stats.unpriceable++;
       this.skipped(item, 'unpriceable', '');
@@ -220,7 +226,11 @@ export class NewsEngine {
     try {
       let instruments = q.symbols.map(s => instrument(s, this.opts.companyName));
       if (this.opts.onlyTradable) {
-        instruments = instruments.filter(ins => sessionOf(ins, tPrepare) !== 'closed');
+        const sessions = this.opts.equitySessions;
+        instruments = instruments.filter(ins => {
+          const session = sessionOf(ins, tPrepare);
+          return session !== 'closed' && (ins.assetClass === 'crypto' || !sessions || sessions.includes(session));
+        });
         if (instruments.length === 0) {
           this.stats.closed++;
           this.memory.unanswered(item.id);

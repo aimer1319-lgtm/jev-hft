@@ -31,6 +31,15 @@ export const DEFAULT_FEEDS: FeedConfig[] = [
   { name: 'cointelegraph', label: 'Cointelegraph (crypto news site)', url: 'https://cointelegraph.com/rss', symbols: ['BTC-USD'] },
 ];
 
+/** NEWS_EQUITY_SESSIONS: a list of regular, pre, post (default regular). */
+function equitySessions(raw: string | undefined): ('regular' | 'pre' | 'post')[] {
+  const allowed = ['regular', 'pre', 'post'] as const;
+  const list = (raw || 'regular').split(/[\s,]+/).filter(Boolean).map(s => s.toLowerCase());
+  const bad = list.find(s => !(allowed as readonly string[]).includes(s));
+  if (bad) throw new Error(`NEWS_EQUITY_SESSIONS: "${bad}" is not one of ${allowed.join(', ')}`);
+  return allowed.filter(s => list.includes(s));
+}
+
 function feeds(spec: string | undefined): FeedConfig[] {
   if (!spec) return DEFAULT_FEEDS;
   return spec
@@ -137,6 +146,12 @@ export const config = {
     onlyTradable: process.env.NEWS_ONLY_TRADABLE !== '0',
     /** A stock quote wider than this is not a usable price (engine and report use the same limit). */
     maxSpreadBps: envNum('MAX_SPREAD_BPS', 50, { min: 0 }),
+    /**
+     * US sessions in which stocks are asked about (with NEWS_ONLY_TRADABLE=1): regular, pre, post.
+     * Default regular only: on the free IEX feed, pre- and after-hours quotes are too sparse to
+     * measure a move (a stock can show "no change" because nothing was quoted).
+     */
+    equitySessions: equitySessions(process.env.NEWS_EQUITY_SESSIONS),
     /** Forward-return horizons (seconds) recorded for each news decision. */
     horizons: [10, 30, 60, 300, 900, 1800],
   },

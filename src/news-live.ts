@@ -60,6 +60,7 @@ const engine = new NewsEngine(prices, {
   timeoutMs: config.news.timeoutMs,
   onlyTradable: config.news.onlyTradable,
   maxSpreadBps: config.news.maxSpreadBps,
+  equitySessions: config.news.equitySessions,
   companyName: ticker => companies?.nameOf(ticker),
   emit: telemetry.emit,
   write: rec => decisionsOut.write(JSON.stringify(rec) + '\n'),

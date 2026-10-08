@@ -77,6 +77,7 @@ program with a clear message.
 | `NEWS_FAST_POLL_S` | `10` | seconds between checks of a feed that can answer "nothing changed", and of SEC filings (minimum 5) |
 | `NEWS_MANUAL` | off | `1` lets you type headlines for testing (`$AAPL`, `$BTC` pick the asset) |
 | `NEWS_ONLY_TRADABLE` | `1` | ask Jev only about assets whose outcome can be measured (market open, usable price). `0` asks about everything |
+| `NEWS_EQUITY_SESSIONS` | `regular` | US sessions in which stocks are asked about (`regular`, `pre`, `post`). Outside regular hours the free IEX quotes are too sparse to measure a move |
 | `MAX_SPREAD_BPS` | `50` | a stock quote wider than this isn't a usable price. Used by the engine (whether to ask) and the report (whether to count a move) |
 | `NEWS_MAX_SYMBOLS` | `3` | most assets per news item |
 | `NEWS_MAX_INFLIGHT` | `4` | news items judged at the same time |

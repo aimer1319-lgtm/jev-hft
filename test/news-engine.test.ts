@@ -7,8 +7,9 @@ import { FakePrices, scriptedModel, settle, type Step } from './helpers.ts';
 
 const WEDNESDAY_NOON_NY = Date.parse('2026-07-15T16:00:00Z'); // regular session
 const SATURDAY = Date.parse('2026-07-18T16:00:00Z');
+const WEDNESDAY_AFTER_HOURS_NY = Date.parse('2026-07-15T21:00:00Z'); // 5 PM New York: post-market
 
-function setup(script: Step[] = [], opts: { start?: number; onlyTradable?: boolean } = {}) {
+function setup(script: Step[] = [], opts: { start?: number; onlyTradable?: boolean; equitySessions?: ('regular' | 'pre' | 'post')[] } = {}) {
   let now = opts.start ?? WEDNESDAY_NOON_NY;
   const prices = new FakePrices().set('BTC-USD', { mid: 80_000, spreadBps: 0.001 }).set('AAPL', { mid: 200, spreadBps: 3, lastClose: 198 });
   prices.t0 = now;
@@ -27,6 +28,7 @@ function setup(script: Step[] = [], opts: { start?: number; onlyTradable?: boole
     timeoutMs: 60_000,
     onlyTradable: opts.onlyTradable ?? true,
     maxSpreadBps: 50,
+    ...(opts.equitySessions ? { equitySessions: opts.equitySessions } : {}),
     companyName: t => (t === 'AAPL' ? 'Apple Inc.' : undefined),
     now: () => now,
     emit: e => told.push(e),
@@ -281,4 +283,23 @@ test('a closed market, a lost item and a dropped one are reported too', async ()
   dropped.engine.tick(dropped.now());
   await settle();
   assert.deepEqual(dropped.told.map(e => (e.type === 'news-skip' ? e.reason : e.type)), ['news-retry', 'dropped']);
+});
+
+test('outside the chosen US sessions a stock is not asked about, while Bitcoin still is', async () => {
+  const post = setup([], { start: WEDNESDAY_AFTER_HOURS_NY, equitySessions: ['regular'] });
+  post.engine.onItem(post.item('Apple raises guidance', ['AAPL']));
+  await settle();
+  assert.equal(post.calls.length, 0);
+  assert.equal(post.engine.stats.closed, 1, 'counted with the closed-market skips');
+
+  const both = setup([], { start: WEDNESDAY_AFTER_HOURS_NY, equitySessions: ['regular'] });
+  both.engine.onItem(both.item('Apple to accept Bitcoin', ['AAPL', 'BTC-USD']));
+  await settle();
+  assert.equal(both.calls.length, 1);
+  assert.deepEqual(Object.keys(both.calls[0]!.questions).filter(k => k.startsWith('relevant')), ['relevant_0'], 'only Bitcoin is asked about');
+
+  const allowed = setup([], { start: WEDNESDAY_AFTER_HOURS_NY, equitySessions: ['regular', 'post'] });
+  allowed.engine.onItem(allowed.item('Apple raises guidance', ['AAPL']));
+  await settle();
+  assert.equal(allowed.calls.length, 1, 'post-market allowed');
 });

@@ -31,9 +31,63 @@ export function instrument(symbol: string, companyName?: (ticker: string) => str
  * roundups), otherwise `untagged`. Sources set tags: RSS feeds from their config, Alpaca from
  * Benzinga's tickers, EDGAR from the filer, X and manual input from $cashtags. An empty tag
  * list means "about something we cannot price" and yields no instruments.
+ *
+ * Publishers often list funds that hold a company before the company itself ("CrowdStrike
+ * Stock Hits 52-Week High" tagged CIBR, BUG, AIPI, CRWD). Measuring a company's news on a fund
+ * that holds a sliver of it dilutes the result. So with a company list (`companyName`), funds
+ * go after companies, and when the headline names a tagged company, funds it doesn't name are
+ * dropped. A ticker missing from the SEC's company list is treated as a fund: that list covers
+ * operating companies, and most ETFs are not in it. The index funds that stand for the whole
+ * market (SPY, QQQ...) and Bitcoin are never dropped.
  */
-export function route(item: NewsItem, maxSymbols: number, untagged: string[]): string[] {
-  return [...new Set(item.symbols ?? untagged)].slice(0, maxSymbols);
+export function route(
+  item: NewsItem,
+  maxSymbols: number,
+  untagged: string[],
+  companyName?: (ticker: string) => string | undefined,
+): string[] {
+  const symbols = [...new Set(item.symbols ?? untagged)];
+  if (!item.symbols || !companyName || symbols.length < 2) return symbols.slice(0, maxSymbols);
+  const name = (s: string) => companyName(s);
+  if (!symbols.some(s => name(s))) return symbols.slice(0, maxSymbols); // company list not loaded yet
+  const kept = (s: string) => s === CRYPTO_SYMBOL || s in INDEX_FUNDS;
+  const isFund = (s: string) => !kept(s) && (!name(s) || FUND.test(name(s)!));
+  const named = new Set(symbols.filter(s => headlineNames(item.headline, s, name(s))));
+  const ranked = [
+    ...symbols.filter(s => named.has(s)),
+    ...symbols.filter(s => !named.has(s) && !isFund(s)),
+    ...(named.size > 0 ? [] : symbols.filter(isFund)),
+  ];
+  return ranked.slice(0, maxSymbols);
+}
+
+/** Words in a registrant's name that mark a fund or trust rather than an operating company. */
+const FUND = /\b(ETF|ETFS|ETN|FUND|FUNDS|TRUST|INDEX|PORTFOLIO)\b/i;
+
+/** Legal suffixes and share-class words that say nothing about which company it is. */
+const SUFFIX = new Set('INC CORP CORPORATION CO COMPANY HOLDINGS HOLDING LTD LIMITED PLC SA NV AG LLC LP GROUP THE CLASS CL'.split(' '));
+
+/** First words too common to identify a company on their own ("American", "First"...). */
+const GENERIC = new Set('AMERICAN FIRST UNITED GENERAL NATIONAL GLOBAL INTERNATIONAL NEW BANK US U.S. CAPITAL'.split(' '));
+
+/** Does the headline name this company, by its ticker or by the distinctive start of its name? */
+export function headlineNames(headline: string, ticker: string, name: string | undefined): boolean {
+  if (ticker === CRYPTO_SYMBOL) return /\b(bitcoin|btc)\b/i.test(headline);
+  const escaped = ticker.replace('.', '\\.');
+  // Tickers are matched case-sensitively, and one- or two-letter ones only as $cashtags or in
+  // parentheses, so the article "A" or the word "IT" don't count as mentions.
+  const tickerRe = ticker.length <= 2 ? new RegExp(`(\\$${escaped}\\b|\\(${escaped}\\))`) : new RegExp(`(^|[^A-Za-z])\\$?${escaped}([^A-Za-z]|$)`);
+  if (tickerRe.test(headline)) return true;
+  if (!name) return false;
+  const words = name
+    .toUpperCase()
+    .replace(/[.,]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w && !SUFFIX.has(w));
+  if (words.length === 0) return false;
+  const key = GENERIC.has(words[0]!) && words.length > 1 ? `${words[0]} ${words[1]}` : words[0]!;
+  if (key.length < 3) return false;
+  return new RegExp(`(^|[^A-Za-z])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z]|$)`, 'i').test(headline);
 }
 
 /** Normalize a source's ticker ('BTCUSD', 'BTC', 'AAPL', 'BRK.B'); undefined if we cannot price it. */

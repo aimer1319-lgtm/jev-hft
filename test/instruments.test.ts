@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { usSession } from '../src/market/sessions.ts';
-import { instrument, normalizeCashtag, normalizeSymbol, route, sessionOf } from '../src/news/instruments.ts';
+import { headlineNames, instrument, normalizeCashtag, normalizeSymbol, route, sessionOf } from '../src/news/instruments.ts';
 import type { NewsItem } from '../src/news/types.ts';
 
 const item = (symbols?: string[]): NewsItem => ({ id: 'a', source: 's', headline: 'h', recvTs: 0, ...(symbols ? { symbols } : {}) });
@@ -11,6 +11,45 @@ test('routing: tags win, no tags means the macro route, empty tags means nothing
   assert.deepEqual(route(item(), 3, ['SPY', 'BTC-USD']), ['SPY', 'BTC-USD']);
   assert.deepEqual(route(item([]), 3, ['SPY', 'BTC-USD']), []);
   assert.deepEqual(route(item(['A', 'B', 'A', 'C', 'D']), 3, []), ['A', 'B', 'C'], 'deduplicated, then capped');
+});
+
+const NAMES: Record<string, string> = {
+  CRWD: 'CrowdStrike Holdings, Inc.',
+  BUG: 'Global X Funds',
+  CIBR: 'First Trust Exchange-Traded Fund VI',
+  RCL: 'ROYAL CARIBBEAN CRUISES LTD',
+  VOT: 'VANGUARD INDEX FUNDS',
+  BBY: 'BEST BUY CO INC',
+  AMZN: 'AMAZON COM INC',
+  AAPL: 'Apple Inc.',
+  AXP: 'AMERICAN EXPRESS CO',
+  F: 'FORD MOTOR CO',
+};
+const names = (t: string) => NAMES[t];
+const tagged = (headline: string, symbols: string[]): NewsItem => ({ id: 'a', source: 's', headline, recvTs: 0, symbols });
+
+test('routing: funds the headline does not name are dropped when it names a company', () => {
+  assert.deepEqual(route(tagged('CrowdStrike Stock Hits 52-Week High - Here\'s Why', ['CIBR', 'BUG', 'AIPI', 'CRWD']), 3, [], names), ['CRWD'], 'AIPI is not in the company list: a fund');
+  assert.deepEqual(route(tagged('Royal Caribbean Sets Sights on $2 Trillion Vacation Market', ['VOT', 'CGDV', 'RCL']), 3, [], names), ['RCL']);
+  assert.deepEqual(route(tagged('Best Buy, Amazon Deepen Fire TV Alliance', ['BBY', 'AMZN']), 3, [], names), ['BBY', 'AMZN'], 'both named, order kept');
+  assert.deepEqual(route(tagged('Analyst upgrades AAPL on services growth', ['BUG', 'AAPL']), 3, [], names), ['AAPL'], 'named by ticker');
+  assert.deepEqual(route(tagged('Apple raises guidance', ['AAPL', 'AMZN', 'BTC-USD', 'SPY']), 4, [], names), ['AAPL', 'AMZN', 'BTC-USD', 'SPY'], 'companies, Bitcoin and index funds stay');
+});
+
+test('routing: when nothing is named, funds go last; before the company list loads, nothing changes', () => {
+  assert.deepEqual(route(tagged('Tech stocks rally into the close', ['BUG', 'CRWD', 'CIBR', 'AAPL']), 3, [], names), ['CRWD', 'AAPL', 'BUG']);
+  assert.deepEqual(route(tagged('CrowdStrike Stock Hits 52-Week High', ['CIBR', 'BUG', 'CRWD']), 3, []), ['CIBR', 'BUG', 'CRWD'], 'no list given');
+  assert.deepEqual(route(tagged('CrowdStrike Stock Hits 52-Week High', ['CIBR', 'BUG', 'CRWD']), 3, [], () => undefined), ['CIBR', 'BUG', 'CRWD'], 'list not loaded yet');
+  assert.deepEqual(route(item(), 3, ['SPY', 'BTC-USD'], names), ['SPY', 'BTC-USD'], 'the macro route is left alone');
+});
+
+test('a headline names a company by ticker or by the distinctive start of its name, not by accident', () => {
+  assert.equal(headlineNames('American Express beats estimates', 'AXP', NAMES.AXP), true, 'a generic first word needs the second');
+  assert.equal(headlineNames('American Airlines cuts routes', 'AXP', NAMES.AXP), false);
+  assert.equal(headlineNames('Is it time to buy a stock?', 'F', NAMES.F), false, 'one-letter tickers only as $F or (F)');
+  assert.equal(headlineNames('Ford Motor (F) recalls trucks', 'F', NAMES.F), true);
+  assert.equal(headlineNames('Applebee\'s owner reports', 'AAPL', NAMES.AAPL), false, 'whole words only');
+  assert.equal(headlineNames('Bitcoin slips below $80K', 'BTC-USD', undefined), true);
 });
 
 test('a publisher\'s ticker tags: Bitcoin in its spellings, US tickers, nothing else', () => {
